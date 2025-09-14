@@ -20,6 +20,7 @@ import logging
 import math
 import os
 from collections import OrderedDict
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 import depend
 import objtypes
@@ -41,6 +42,7 @@ _type_defaults = {
   'ChoiceList':   None,
   'Date':         None,
   'DateTime':     None,
+  'Geometry':     None,
   'Id':           0,
   'Int':          0,
   'ManualSortPos':  float('inf'),
@@ -49,6 +51,7 @@ _type_defaults = {
   'Ref':          0,
   'RefList':      None,
   'Text':         u'',
+  'Vector':       None,
 }
 
 # Compute truthy and falsy values for Bool type here so they are not
@@ -534,3 +537,492 @@ class Attachments(ReferenceList):
   """
   def __init__(self):
     super(Attachments, self).__init__('_grist_Attachments')
+
+
+class Geometry(BaseColumnType):
+  """
+  Geometry type for holding PostGIS spatial data (points, lines, polygons, etc.).
+  Values are stored as WKT (Well-Known Text) strings for compatibility.
+  
+  Supports:
+  - WKT strings: POINT, LINESTRING, POLYGON, MULTIPOINT, etc.
+  - GeoJSON dictionaries (basic conversion)
+  - Shapely objects (via __geo_interface__)
+  
+  Examples:
+    >>> Geometry.do_convert('POINT(2.3 48.8)')
+    'POINT(2.3 48.8)'
+    >>> Geometry.do_convert({'type': 'Point', 'coordinates': [2.3, 48.8]})
+    'POINT(2.3 48.8)'
+  """
+  
+  @classmethod
+  def do_convert(cls, value: Any) -> Optional[str]:
+    """
+    Convert various input types to WKT string format.
+    
+    Args:
+        value: Input value (WKT string, GeoJSON dict, Shapely object, or None)
+        
+    Returns:
+        WKT string representation or None for empty values
+        
+    Raises:
+        objtypes.ConversionError: If input cannot be converted to valid geometry
+    """
+    if value in ("", None):
+      return None
+    elif isinstance(value, str):
+      # Accept WKT strings directly
+      if cls._is_valid_wkt(value):
+        return value.strip()
+      else:
+        raise objtypes.ConversionError('Geometry')
+    elif isinstance(value, dict):
+      # Convert GeoJSON to WKT if possible
+      return cls._geojson_to_wkt(value)
+    elif hasattr(value, '__geo_interface__'):
+      # Handle Shapely objects
+      return cls._geojson_to_wkt(value.__geo_interface__)
+    else:
+      raise objtypes.ConversionError('Geometry')
+
+  @classmethod
+  def is_right_type(cls, value: Any) -> bool:
+    """
+    Check if value is a valid WKT string or None.
+    
+    Args:
+        value: Value to validate
+        
+    Returns:
+        True if value is None or a valid WKT string
+    """
+    return value is None or (isinstance(value, str) and cls._is_valid_wkt(value))
+
+  @staticmethod
+  def _is_valid_wkt(wkt_string: Any) -> bool:
+    """
+    Basic validation for WKT format.
+    
+    Args:
+        wkt_string: String to validate as WKT
+        
+    Returns:
+        True if string appears to be valid WKT format
+    """
+    if not isinstance(wkt_string, str):
+      return False
+    wkt_upper = wkt_string.strip().upper()
+    wkt_types = ['POINT', 'LINESTRING', 'POLYGON', 'MULTIPOINT', 
+                 'MULTILINESTRING', 'MULTIPOLYGON', 'GEOMETRYCOLLECTION']
+    return any(wkt_upper.startswith(wkt_type) for wkt_type in wkt_types)
+
+  @staticmethod
+  def _geojson_to_wkt(geojson: Dict[str, Any]) -> str:
+    """
+    Basic GeoJSON to WKT conversion.
+    
+    Currently supports only Point geometry type.
+    
+    Args:
+        geojson: GeoJSON-like dictionary
+        
+    Returns:
+        WKT string representation
+        
+    Raises:
+        objtypes.ConversionError: If GeoJSON cannot be converted
+    """
+    if geojson.get('type') == 'Point' and 'coordinates' in geojson:
+      coords = geojson['coordinates']
+      if len(coords) >= 2:
+        return f"POINT({coords[0]} {coords[1]})"
+    raise objtypes.ConversionError('Geometry')
+
+
+class Vector(BaseColumnType):
+  """
+  Vector type for holding pg_vector embeddings and numeric vectors.
+  Values are stored as arrays of floating-point numbers.
+  
+  Supports:
+  - Lists/tuples of numbers: [1.0, 2.0, 3.0]
+  - JSON string arrays: "[1.0, 2.0, 3.0]"
+  - CSV string format: "1.0, 2.0, 3.0"
+  - Mixed numeric types (int, float, numeric strings)
+  - Dimension validation (optional)
+  
+  Common use cases:
+  - OpenAI embeddings (1536 dimensions)
+  - Sentence transformers (384 dimensions) 
+  - Custom ML model embeddings
+  - Mathematical vectors of any size
+  
+  Examples:
+    >>> Vector.do_convert([1, 2, 3])
+    [1.0, 2.0, 3.0]
+    >>> Vector.do_convert("[0.1, 0.2, 0.3]")
+    [0.1, 0.2, 0.3]
+    >>> Vector.do_convert("1.5, -2.0, 3.14")
+    [1.5, -2.0, 3.14]
+  """
+  
+  def __init__(self, dimensions: Optional[int] = None) -> None:
+    """
+    Initialize Vector type with optional dimension constraint.
+    
+    Args:
+        dimensions: Expected vector dimension, or None for any size
+    """
+    super(Vector, self).__init__()
+    self.dimensions = dimensions
+
+  @classmethod
+  def do_convert(cls, value: Any) -> Optional[List[float]]:
+    """
+    Convert various input types to list of floats.
+    
+    Args:
+        value: Input value (list, tuple, string, or None)
+        
+    Returns:
+        List of float values, or None for empty inputs
+        
+    Raises:
+        objtypes.ConversionError: If input cannot be converted to valid vector
+    """
+    if value in ("", None):
+      return None
+    elif isinstance(value, (list, tuple)):
+      # Convert to list of floats
+      try:
+        vector = [float(x) for x in value]
+        return vector
+      except (ValueError, TypeError):
+        raise objtypes.ConversionError('Vector')
+    elif isinstance(value, str):
+      # Parse string representation like "[1.0, 2.0, 3.0]" or "1.0, 2.0, 3.0"
+      value_stripped = value.strip()
+      if not value_stripped:
+        return None
+      
+      try:
+        if value_stripped.startswith('[') and value_stripped.endswith(']'):
+          # JSON array format
+          import json
+          vector = json.loads(value_stripped)
+          if not isinstance(vector, list):
+            raise ValueError("JSON must be an array")
+          return [float(x) for x in vector]
+        else:
+          # Comma-separated values format
+          vector = [float(x.strip()) for x in value_stripped.split(',')]
+          return vector
+      except (ValueError, TypeError, json.JSONDecodeError):
+        raise objtypes.ConversionError('Vector')
+    else:
+      raise objtypes.ConversionError('Vector')
+
+  def convert(self, value_to_convert: Any) -> Union[List[float], AltText, None]:
+    """
+    Override base convert to add dimension validation.
+    
+    Args:
+        value_to_convert: Value to convert and validate
+        
+    Returns:
+        Converted vector, AltText for dimension errors, or None
+    """
+    converted = super(Vector, self).convert(value_to_convert)
+    if (converted is not None and 
+        self.dimensions is not None and 
+        len(converted) != self.dimensions):
+      return AltText(
+        f"Vector dimension mismatch: expected {self.dimensions}, got {len(converted)}",
+        converted
+      )
+    return converted
+
+  @classmethod
+  def is_right_type(cls, value: Any) -> bool:
+    """
+    Check if value is a valid vector (list/tuple of numbers) or None.
+    
+    Args:
+        value: Value to validate
+        
+    Returns:
+        True if value is None or a list/tuple of numeric values
+    """
+    return (value is None or 
+            (isinstance(value, (list, tuple)) and 
+             all(isinstance(x, _numeric_types) for x in value)))
+
+
+
+# ============================================================================
+# FORMULES GÉOMÉTRIQUES NATIVES POUR GRIST
+# ============================================================================
+
+def ST_DISTANCE(geom1: str, geom2: str, unit: str = 'm') -> float:
+  """
+  Calcule la distance entre deux géométries.
+  
+  Args:
+      geom1, geom2: Géométries au format WKT
+      unit: Unité ('m', 'km', 'deg') - défaut: mètres
+  
+  Returns:
+      Distance en unité spécifiée
+  
+  Example:
+      ST_DISTANCE($Location_A, $Location_B, 'km')
+  """
+  try:
+      coords1 = _extract_point_coords(geom1)
+      coords2 = _extract_point_coords(geom2)
+      
+      if not coords1 or not coords2:
+          raise ValueError("Géométries non supportées pour ST_DISTANCE")
+      
+      # Distance haversine pour coordonnées géographiques
+      distance_m = _haversine_distance(coords1, coords2)
+      
+      if unit == 'km':
+          return distance_m / 1000
+      elif unit == 'deg':
+          return _euclidean_distance(coords1, coords2)
+      else:
+          return distance_m
+          
+  except Exception as e:
+      raise ValueError(f"ST_DISTANCE error: {e}")
+
+
+def ST_AREA(geometry: str, unit: str = 'm2') -> float:
+  """
+  Calcule l'aire d'un polygone.
+  
+  Args:
+      geometry: Polygone au format WKT
+      unit: Unité ('m2', 'km2', 'ha') - défaut: m²
+  
+  Example:
+      ST_AREA($Polygon_Field, 'ha')
+  """
+  try:
+      coords = _extract_polygon_coords(geometry)
+      if not coords:
+          raise ValueError("Géométrie n'est pas un polygone valide")
+      
+      area_m2 = _polygon_area_m2(coords)
+      
+      if unit == 'km2':
+          return area_m2 / 1000000
+      elif unit == 'ha':
+          return area_m2 / 10000
+      else:
+          return area_m2
+          
+  except Exception as e:
+      raise ValueError(f"ST_AREA error: {e}")
+
+
+def ST_CONTAINS(geom1: str, geom2: str) -> bool:
+  """
+  Teste si geom1 contient entièrement geom2.
+  
+  Args:
+      geom1: Géométrie contenante (généralement polygone)
+      geom2: Géométrie contenue (généralement point)
+  
+  Example:
+      ST_CONTAINS($Zone_Polygon, $Location_Point)
+  """
+  try:
+      if "POLYGON" in geom1.upper() and "POINT" in geom2.upper():
+          polygon = _extract_polygon_coords(geom1)
+          point = _extract_point_coords(geom2)
+          return _point_in_polygon(point, polygon) if point and polygon else False
+      
+      return False  # Autres cas non supportés pour l'instant
+      
+  except Exception as e:
+      raise ValueError(f"ST_CONTAINS error: {e}")
+
+
+def ST_CENTROID(geometry: str) -> str:
+  """
+  Calcule le centroïde (centre géométrique) d'une géométrie.
+  
+  Args:
+      geometry: Géométrie au format WKT
+  
+  Returns:
+      Point WKT du centroïde
+  
+  Example:
+      ST_CENTROID($Polygon_Field)
+  """
+  try:
+      if "POLYGON" in geometry.upper():
+          coords = _extract_polygon_coords(geometry)
+          if not coords:
+              raise ValueError("Polygone invalide")
+          
+          # Centroïde = moyenne des coordonnées
+          center_x = sum(x for x, y in coords) / len(coords)
+          center_y = sum(y for x, y in coords) / len(coords)
+          
+          return f"POINT({center_x} {center_y})"
+      
+      elif "POINT" in geometry.upper():
+          return geometry  # Déjà un point
+          
+      raise ValueError("Type de géométrie non supporté")
+      
+  except Exception as e:
+      raise ValueError(f"ST_CENTROID error: {e}")
+
+
+def VECTOR_SIMILARITY(vector1, vector2, method: str = 'cosine') -> float:
+  """
+  Calcule la similarité entre deux vecteurs.
+  
+  Args:
+      vector1, vector2: Vecteurs à comparer
+      method: Méthode ('cosine', 'euclidean', 'dot') - défaut: cosine
+  
+  Returns:
+      Score de similarité (0-1 pour cosine)
+  
+  Example:
+      VECTOR_SIMILARITY($Embedding_A, $Embedding_B)
+  """
+  try:
+      if not vector1 or not vector2 or len(vector1) != len(vector2):
+          raise ValueError("Vecteurs doivent avoir la même dimension")
+      
+      if method == 'cosine':
+          return _cosine_similarity(vector1, vector2)
+      elif method == 'euclidean':
+          return 1 / (1 + _euclidean_distance_vectors(vector1, vector2))
+      elif method == 'dot':
+          return sum(a * b for a, b in zip(vector1, vector2))
+      else:
+          raise ValueError(f"Méthode {method} non supportée")
+          
+  except Exception as e:
+      raise ValueError(f"VECTOR_SIMILARITY error: {e}")
+
+
+# ============================================================================
+# FONCTIONS UTILITAIRES GÉOMÉTRIQUES
+# ============================================================================
+
+def _extract_point_coords(wkt: str):
+  """Extrait les coordonnées d'un point WKT."""
+  import re
+  match = re.search(r'POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)', wkt.upper())
+  if match:
+      return (float(match.group(1)), float(match.group(2)))
+  return None
+
+
+def _extract_polygon_coords(wkt: str):
+  """Extrait les coordonnées d'un polygone WKT (anneau externe seulement)."""
+  import re
+  match = re.search(r'POLYGON\s*\(\s*\(\s*(.*?)\s*\)\s*\)', wkt.upper())
+  if match:
+      coords_str = match.group(1)
+      coords = []
+      for pair in coords_str.split(','):
+          parts = pair.strip().split()
+          if len(parts) >= 2:
+              coords.append((float(parts[0]), float(parts[1])))
+      return coords
+  return None
+
+
+def _haversine_distance(coord1, coord2) -> float:
+  """Calcule la distance haversine entre deux points en mètres."""
+  lat1, lon1 = math.radians(coord1[1]), math.radians(coord1[0])
+  lat2, lon2 = math.radians(coord2[1]), math.radians(coord2[0])
+  
+  dlat = lat2 - lat1
+  dlon = lon2 - lon1
+  
+  a = (math.sin(dlat / 2) ** 2 + 
+       math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2)
+  
+  c = 2 * math.asin(math.sqrt(a))
+  r = 6371000  # Rayon terre en mètres
+  
+  return r * c
+
+
+def _euclidean_distance(coord1, coord2) -> float:
+  """Distance euclidienne simple entre deux points."""
+  return math.sqrt((coord2[0] - coord1[0]) ** 2 + (coord2[1] - coord1[1]) ** 2)
+
+
+def _polygon_area_m2(coords) -> float:
+  """Calcule l'aire d'un polygone en mètres carrés (approximation)."""
+  if len(coords) < 3:
+      return 0
+  
+  # Formule du lacet en coordonnées géographiques
+  area_deg2 = 0
+  n = len(coords)
+  
+  for i in range(n):
+      j = (i + 1) % n
+      area_deg2 += coords[i][0] * coords[j][1]
+      area_deg2 -= coords[j][0] * coords[i][1]
+  
+  area_deg2 = abs(area_deg2) / 2
+  
+  # Conversion approximative degrés² → m²
+  return area_deg2 * 12364000000  # m²
+
+
+def _point_in_polygon(point, polygon) -> bool:
+  """Test point-in-polygon par ray casting."""
+  if not point or not polygon:
+      return False
+      
+  x, y = point
+  n = len(polygon)
+  inside = False
+  
+  p1x, p1y = polygon[0]
+  for i in range(1, n + 1):
+      p2x, p2y = polygon[i % n]
+      if y > min(p1y, p2y):
+          if y <= max(p1y, p2y):
+              if x <= max(p1x, p2x):
+                  if p1y != p2y:
+                      xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                  if p1x == p2x or x <= xinters:
+                      inside = not inside
+      p1x, p1y = p2x, p2y
+  
+  return inside
+
+
+def _cosine_similarity(vecA, vecB) -> float:
+  """Calcule la similarité cosinus entre deux vecteurs."""
+  dot_product = sum(a * b for a, b in zip(vecA, vecB))
+  magnitude_a = math.sqrt(sum(a * a for a in vecA))
+  magnitude_b = math.sqrt(sum(b * b for b in vecB))
+  
+  if magnitude_a == 0 or magnitude_b == 0:
+      return 0
+  
+  return dot_product / (magnitude_a * magnitude_b)
+
+
+def _euclidean_distance_vectors(vecA, vecB) -> float:
+  """Distance euclidienne entre deux vecteurs."""
+  return math.sqrt(sum((a - b) ** 2 for a, b in zip(vecA, vecB)))

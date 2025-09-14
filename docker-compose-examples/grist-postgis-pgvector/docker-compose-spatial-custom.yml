@@ -1,0 +1,85 @@
+services:
+  grist-spatial:
+    image: grist-spatial:latest
+    environment:
+      # Configuration base de données PostgreSQL 
+      TYPEORM_DATABASE: grist
+      TYPEORM_USERNAME: grist
+      TYPEORM_HOST: grist-db-spatial
+      TYPEORM_LOGGING: false
+      TYPEORM_PASSWORD: ${DATABASE_PASSWORD}
+      TYPEORM_PORT: 5432
+      TYPEORM_TYPE: postgres
+
+      # Configuration Redis pour performances
+      REDIS_URL: redis://grist-redis
+
+      # Extensions spatiales activées
+      GRIST_SPATIAL_ENABLED: "true"
+      GRIST_VECTOR_ENABLED: "true"
+      
+      # Configuration Grist
+      GRIST_DEFAULT_EMAIL: admin@example.com
+      GRIST_SESSION_COOKIE_AGE: 86400
+      NODE_ENV: production
+      GRIST_DATA_DIR: /persist/docs
+      GRIST_INST_DIR: /persist
+
+    volumes:
+      # Données persistantes des documents Grist
+      - ${PERSIST_DIR}/grist:/persist
+    ports:
+      - "8484:8484"
+    depends_on:
+      grist-db-spatial:
+        condition: service_healthy
+      grist-redis:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8484/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  grist-db-spatial:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgis-pgvector-full
+    environment:
+        POSTGRES_DB: grist
+        POSTGRES_USER: grist
+        POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+        POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - ${PERSIST_DIR}/postgres:/var/lib/postgresql/data
+      # Script d'initialisation avec PostGIS + pg_vector
+      - ./init-complete-extensions.sql:/docker-entrypoint-initdb.d/01-init-extensions.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grist -d grist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    ports:
+      - "5432:5432"
+    command: >
+      postgres
+      -c log_statement=all
+      -c shared_preload_libraries='postgis-3,vector'
+      -c max_connections=200
+      -c shared_buffers=256MB
+    restart: unless-stopped
+
+  grist-redis:
+    image: redis:alpine
+    volumes:
+      - ${PERSIST_DIR}/redis:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

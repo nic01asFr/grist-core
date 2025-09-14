@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  grist-integrated:
+    build:
+      context: .
+      dockerfile: Dockerfile.grist-integrated
+    environment:
+      # PostgreSQL Configuration (intégré)
+      TYPEORM_TYPE: postgres
+      TYPEORM_HOST: 127.0.0.1
+      TYPEORM_PORT: 5432  
+      TYPEORM_DATABASE: grist
+      TYPEORM_USERNAME: grist
+      TYPEORM_PASSWORD: grist_integrated_2024
+      TYPEORM_LOGGING: false
+
+      # Albert API Configuration
+      ALBERT_API_URL: ${ALBERT_API_URL:-https://albert.api.etalab.gouv.fr/v1}
+      ALBERT_API_TOKEN: ${ALBERT_API_TOKEN:-test-token}
+      ALBERT_MODEL_EMBEDDING: ${ALBERT_MODEL_EMBEDDING:-embeddings-small}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+
+      # Grist Configuration
+      DEBUG: 1
+      GRIST_DEFAULT_EMAIL: admin@example.com
+      GRIST_DATA_DIR: /persist/docs
+      GRIST_INST_DIR: /persist
+
+    volumes:
+      # Volume unique pour toutes les données persistantes
+      - grist-integrated-data:/persist
+      # Volume pour les données PostgreSQL
+      - postgres-integrated-data:/var/lib/postgresql/data
+      # Logs
+      - grist-logs:/var/log/supervisor
+
+    ports:
+      - "8487:8484"  # Port différent pour éviter les conflits
+
+    restart: unless-stopped
+    
+    # Health check pour le container intégré
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8484/ && pg_isready -h 127.0.0.1 -p 5432 -U grist -d grist"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  grist-integrated-data:
+    driver: local
+  postgres-integrated-data:
+    driver: local
+  grist-logs:
+    driver: local
+
+networks:
+  default:
+    name: grist-integrated

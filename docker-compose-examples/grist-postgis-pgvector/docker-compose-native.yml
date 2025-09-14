@@ -1,0 +1,110 @@
+version: '3.8'
+
+# Configuration Docker Compose pour Grist Native intégré
+# PostGIS + pgvector + Albert API + Fonctionnalités spatiales/vectorielles complètes
+
+services:
+  grist-native:
+    image: grist-native:latest
+    container_name: grist-native-production
+    
+    environment:
+      # Configuration PostgreSQL intégrée
+      TYPEORM_TYPE: postgres
+      TYPEORM_HOST: localhost
+      TYPEORM_PORT: 5432
+      TYPEORM_DATABASE: grist
+      TYPEORM_USERNAME: grist
+      TYPEORM_PASSWORD: grist_native_2024
+      TYPEORM_LOGGING: false
+      
+      # Configuration Albert API
+      ALBERT_API_URL: ${ALBERT_API_URL:-https://albert.api.etalab.gouv.fr/v1}
+      ALBERT_API_TOKEN: ${ALBERT_API_TOKEN:-test-token}
+      ALBERT_MODEL_EMBEDDING: ${ALBERT_MODEL_EMBEDDING:-embeddings-small}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+      
+      # Configuration Grist étendue
+      GRIST_DEFAULT_EMAIL: admin@example.com
+      GRIST_DATA_DIR: /persist/docs
+      GRIST_INST_DIR: /persist
+      DEBUG: 1
+      
+      # Activation des fonctionnalités natives
+      GRIST_SPATIAL_ENABLED: "true"
+      GRIST_VECTOR_ENABLED: "true"
+      GRIST_ALBERT_ENABLED: "true"
+      GRIST_NATIVE_MODE: "true"
+      
+      # Configuration spécifique production
+      NODE_ENV: production
+      
+    volumes:
+      # Volume unique pour toutes les données persistantes
+      - grist-native-data:/persist
+      # Volume pour PostgreSQL intégré
+      - postgres-native-data:/var/lib/postgresql/data
+      # Volume pour les logs
+      - native-logs:/var/log
+      
+    ports:
+      - "8484:8484"  # Port principal Grist
+      # PostgreSQL n'est pas exposé (interne seulement)
+      
+    networks:
+      - grist-native-network
+      
+    restart: unless-stopped
+    
+    # Health check complet
+    healthcheck:
+      test: |
+        curl -f http://localhost:8484/ && 
+        pg_isready -h localhost -p 5432 -U grist -d grist
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+      
+    # Limites ressources pour production
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    
+    # Labels pour identification
+    labels:
+      - "com.grist.type=native-integrated"
+      - "com.grist.version=1.0.0"
+      - "com.grist.features=spatial,vector,albert-api"
+
+volumes:
+  grist-native-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/grist
+      
+  postgres-native-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/postgres
+      
+  native-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+
+networks:
+  grist-native-network:
+    driver: bridge
+    name: grist-native

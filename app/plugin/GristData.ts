@@ -65,5 +65,5 @@ export interface RowRecords {
 }
 
 export type GristType = 'Any' | 'Attachments' | 'Blob' | 'Bool' | 'Choice' | 'ChoiceList' |
-  'Date' | 'DateTime' |
-  'Id' | 'Int' | 'ManualSortPos' | 'Numeric' | 'PositionNumber' | 'Ref' | 'RefList' | 'Text';
+  'Date' | 'DateTime' | 'Geometry' |
+  'Id' | 'Int' | 'ManualSortPos' | 'Numeric' | 'PositionNumber' | 'Ref' | 'RefList' | 'Text' | 'Vector';

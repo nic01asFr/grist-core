@@ -1,0 +1,67 @@
+services:
+  grist:
+    image: gristlabs/grist:latest
+    environment:
+      # Postgres database setup
+      TYPEORM_DATABASE: grist
+      TYPEORM_USERNAME: grist
+      TYPEORM_HOST: grist-db-vector
+      TYPEORM_LOGGING: false
+      TYPEORM_PASSWORD: ${DATABASE_PASSWORD}
+      TYPEORM_PORT: 5432
+      TYPEORM_TYPE: postgres
+
+      # Redis setup for performance
+      REDIS_URL: redis://grist-redis
+
+      # Debugging
+      DEBUG: 1
+      GRIST_DEFAULT_EMAIL: admin@example.com
+
+      # Albert API Configuration for AI features
+      ALBERT_API_URL: ${ALBERT_API_URL}
+      ALBERT_API_TOKEN: ${ALBERT_API_TOKEN}
+      ALBERT_MODEL: ${ALBERT_MODEL}
+      ALBERT_MODEL_EMBEDDING: ${ALBERT_MODEL_EMBEDDING}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION}
+
+    volumes:
+      # Where to store persistent data, such as documents.
+      - ${PERSIST_DIR}/grist:/persist
+    ports:
+      - "8484:8484"
+    depends_on:
+      grist-db-vector:
+        condition: service_healthy
+      grist-redis:
+        condition: service_started
+
+  grist-db-vector:
+    image: ankane/pgvector
+    environment:
+        POSTGRES_DB: grist
+        POSTGRES_USER: grist
+        POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+        POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - ${PERSIST_DIR}/postgres-vector:/var/lib/postgresql/data
+      # Script d'initialisation pour installer les extensions
+      - ./init-extensions-pgvector.sql:/docker-entrypoint-initdb.d/01-init-extensions.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grist -d grist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    ports:
+      - "5433:5432"  # Port différent pour éviter les conflits
+    command: >
+      postgres
+      -c log_statement=all
+      -c shared_preload_libraries=vector
+
+  grist-redis:
+    image: redis:alpine
+    volumes:
+      - ${PERSIST_DIR}/redis:/data
+    command: redis-server --appendonly yes

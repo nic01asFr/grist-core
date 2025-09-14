@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Base de données PostgreSQL avec PostGIS et pgvector
+  postgres-db:
+    image: postgis/postgis:16-3.4
+    container_name: grist-postgres-spatial
+    environment:
+      POSTGRES_DB: grist
+      POSTGRES_USER: grist
+      POSTGRES_PASSWORD: grist123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --no-locale"
+    volumes:
+      - postgres_data_spatial:/var/lib/postgresql/data
+      - ./init-extensions.sql:/docker-entrypoint-initdb.d/01-init-extensions.sql
+    ports:
+      - "5434:5432"
+    networks:
+      - grist-spatial
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grist -d grist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Application Grist avec extensions spatiales/vectorielles natives
+  grist-app:
+    image: grist-spatial:latest
+    container_name: grist-app-spatial
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    environment:
+      # Configuration base de données
+      TYPEORM_TYPE: postgres
+      TYPEORM_HOST: postgres-db
+      TYPEORM_PORT: 5432
+      TYPEORM_DATABASE: grist
+      TYPEORM_USERNAME: grist
+      TYPEORM_PASSWORD: grist123
+      TYPEORM_LOGGING: false
+      
+      # Configuration Grist
+      GRIST_DEFAULT_EMAIL: admin@example.com
+      GRIST_DATA_DIR: /persist/docs
+      GRIST_INST_DIR: /persist
+      DEBUG: 1
+      
+      # Activation des fonctionnalités spatiales natives
+      GRIST_SPATIAL_ENABLED: "true"
+      GRIST_VECTOR_ENABLED: "true"
+      ALBERT_API_URL: "https://albert.api.etalab.gouv.fr/v1"
+      ALBERT_API_TOKEN: "${ALBERT_API_TOKEN}"
+      
+    volumes:
+      - grist_data_spatial:/persist
+    ports:
+      - "8485:8484"
+    networks:
+      - grist-spatial
+    restart: unless-stopped
+    
+volumes:
+  postgres_data_spatial:
+    driver: local
+  grist_data_spatial:
+    driver: local
+
+networks:
+  grist-spatial:
+    driver: bridge

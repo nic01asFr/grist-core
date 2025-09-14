@@ -1,0 +1,41 @@
+# Dockerfile pour PostgreSQL avec PostGIS + pg_vector
+FROM postgis/postgis:16-3.4
+
+# Installer les dépendances pour compiler pg_vector (version fixe pour stabilité)
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    postgresql-server-dev-16 \
+    clang-13 \
+    llvm-13 \
+    llvm-13-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Créer liens symboliques pour clang (résolution problème compilation)
+RUN ln -sf /usr/bin/clang-13 /usr/bin/clang \
+    && ln -sf /usr/bin/llvm-config-13 /usr/bin/llvm-config
+
+# Compiler et installer pg_vector avec configuration explicite
+RUN cd /tmp \
+    && git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git \
+    && cd pgvector \
+    && make clean \
+    && CC=clang-13 make OPTFLAGS="" \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/pgvector
+
+# Vérifier installation réussie des extensions
+RUN ls -la /usr/share/postgresql/16/extension/ | grep -E "(postgis|vector)" || exit 1
+
+# NE PAS nettoyer les dépendances pour éviter problèmes runtime
+
+# Vérifier que les extensions sont disponibles
+RUN echo "Extensions disponibles:" \
+    && ls -la /usr/share/postgresql/16/extension/ | grep -E "(postgis|vector)"
+
+# Configuration PostgreSQL pour charger les extensions  
+ENV POSTGRES_INITDB_ARGS="--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+
+LABEL description="PostgreSQL with PostGIS + pg_vector for Grist"
+LABEL version="16-postgis3.4-pgvector0.5.1"

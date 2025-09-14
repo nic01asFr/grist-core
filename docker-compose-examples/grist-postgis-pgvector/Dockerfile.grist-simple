@@ -1,0 +1,70 @@
+# Dockerfile Grist Native - Version Simplifiée
+# Intégration PostGIS + pgvector + Albert API
+
+FROM gristlabs/grist:latest
+
+USER root
+
+# Installation PostgreSQL + PostGIS + pgvector
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        wget ca-certificates gnupg2 supervisor \
+        postgresql-15 postgresql-contrib-15 postgresql-15-postgis-3 \
+        postgresql-server-dev-15 build-essential git clang cmake && \
+    cd /tmp && \
+    git clone --branch v0.5.1 --depth 1 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    make && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/pgvector && \
+    apt-get remove -y build-essential git postgresql-server-dev-15 clang cmake && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configuration PostgreSQL
+RUN mkdir -p /var/lib/postgresql/data /run/postgresql /var/log/postgresql /var/log/supervisor && \
+    chown -R postgres:postgres /var/lib/postgresql /run/postgresql /var/log/postgresql && \
+    chmod 755 /var/lib/postgresql
+
+# Initialisation PostgreSQL
+USER postgres
+RUN /usr/lib/postgresql/15/bin/initdb -D /var/lib/postgresql/data \
+    --auth-local=trust --auth-host=md5 --no-locale --encoding=UTF8
+
+# Configuration PostgreSQL pour Grist
+RUN echo "listen_addresses = 'localhost'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "port = 5432" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "shared_preload_libraries = 'postgis-3,vector'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
+
+USER root
+
+# Configuration Supervisor
+RUN echo '[supervisord]\nnodaemon=true\nuser=root\nlogfile=/var/log/supervisor/supervisord.log\nchildlogdir=/var/log/supervisor/\n\n[program:postgresql]\ncommand=/usr/lib/postgresql/15/bin/postgres -D /var/lib/postgresql/data\nuser=postgres\nautostart=true\nautorestart=true\nstdout_logfile=/var/log/supervisor/postgresql.log\nstderr_logfile=/var/log/supervisor/postgresql_error.log\n\n[program:grist]\ncommand=/bin/bash -c "sleep 5 && cd /grist && exec node ./sandbox/supervisor.mjs"\nuser=grist\nautostart=true\nautorestart=true\nstdout_logfile=/var/log/supervisor/grist.log\nstderr_logfile=/var/log/supervisor/grist_error.log' > /etc/supervisor/conf.d/grist-native.conf
+
+# Script d'entrée
+RUN echo '#!/bin/bash\nset -e\necho "🎯 GRIST NATIVE - DÉMARRAGE"\nmkdir -p /var/lib/postgresql/data /var/log/postgresql /var/log/supervisor\nchown -R postgres:postgres /var/lib/postgresql /var/log/postgresql\nchown -R grist:grist /persist 2>/dev/null || true\necho "🚀 Lancement Supervisor..."\nexec "$@"' > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
+
+# Variables d'environnement
+ENV TYPEORM_TYPE=postgres
+ENV TYPEORM_HOST=localhost
+ENV TYPEORM_PORT=5432
+ENV TYPEORM_DATABASE=grist
+ENV TYPEORM_USERNAME=grist
+ENV TYPEORM_PASSWORD=grist_native_2024
+ENV GRIST_SPATIAL_ENABLED=true
+ENV GRIST_VECTOR_ENABLED=true
+ENV ALBERT_API_URL=https://albert.api.etalab.gouv.fr/v1
+ENV ALBERT_API_TOKEN=test-token
+ENV GRIST_DATA_DIR=/persist/docs
+ENV GRIST_INST_DIR=/persist
+
+VOLUME ["/persist"]
+
+EXPOSE 8484
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/grist-native.conf"]

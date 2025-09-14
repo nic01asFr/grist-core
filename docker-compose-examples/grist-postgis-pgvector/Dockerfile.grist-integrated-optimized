@@ -1,0 +1,79 @@
+# Dockerfile optimisé pour Grist avec PostgreSQL + PostGIS + pgvector intégrés
+# Version allégée pour réduire la consommation mémoire
+
+FROM gristlabs/grist:latest
+
+# Passer en root pour les installations
+USER root
+
+# Installation en une seule étape pour optimiser les layers
+RUN apt-get update && \
+    apt-get install -y wget ca-certificates gnupg2 && \
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
+    echo "deb http://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        postgresql-16 \
+        postgresql-contrib-16 \
+        postgresql-16-postgis-3 \
+        postgresql-server-dev-16 \
+        build-essential \
+        git \
+        clang-13 \
+        llvm-13 \
+        cmake \
+        supervisor && \
+    ln -sf /usr/bin/clang-13 /usr/bin/clang && \
+    ln -sf /usr/bin/llvm-config-13 /usr/bin/llvm-config && \
+    cd /tmp && \
+    git clone --branch v0.5.1 --depth 1 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    CC=clang-13 make OPTFLAGS="" && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/pgvector && \
+    apt-get remove -y build-essential git clang-13 llvm-13 cmake postgresql-server-dev-16 && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/* /var/tmp/*
+
+# Configuration PostgreSQL et répertoires
+RUN mkdir -p /var/lib/postgresql/data /run/postgresql /var/log/supervisor && \
+    chown -R postgres:postgres /var/lib/postgresql /run/postgresql && \
+    chmod 755 /var/lib/postgresql
+
+# Initialisation PostgreSQL (version minimal)
+USER postgres
+RUN /usr/lib/postgresql/16/bin/initdb -D /var/lib/postgresql/data \
+    --auth-local=trust --auth-host=md5 --no-locale --encoding=UTF8 && \
+    echo "listen_addresses = '127.0.0.1'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "port = 5432" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "shared_preload_libraries = 'postgis-3,vector'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
+
+USER root
+
+# Copie des fichiers de configuration (version simplifiée)
+COPY supervisord-simple.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Script d'entrée simplifié
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "🚀 Démarrage Grist intégré avec PostgreSQL + PostGIS + pgvector"\n\
+chown -R postgres:postgres /var/lib/postgresql\n\
+chown -R grist:grist /grist /persist 2>/dev/null || true\n\
+exec "$@"' > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
+
+# Configuration environnement PostgreSQL intégré
+ENV TYPEORM_TYPE=postgres \
+    TYPEORM_HOST=127.0.0.1 \
+    TYPEORM_PORT=5432 \
+    TYPEORM_DATABASE=grist \
+    TYPEORM_USERNAME=grist \
+    TYPEORM_PASSWORD=grist_simple_2024 \
+    TYPEORM_LOGGING=false
+
+EXPOSE 8484
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

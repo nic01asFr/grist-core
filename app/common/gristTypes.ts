@@ -29,6 +29,7 @@ const _defaultValues: {[key in GristType]: [CellValue, string]} = {
   'ChoiceList':       [ null,  "NULL"  ],
   'Date':             [ null,  "NULL"  ],
   'DateTime':         [ null,  "NULL"  ],
+  'Geometry':         [ null,  "NULL"  ],
   'Id':               [ 0,     "0"     ],
   'Int':              [ 0,     "0"     ],
   // Note that "1e999" is a way to store Infinity into SQLite. This is verified by "Defaults"
@@ -39,6 +40,7 @@ const _defaultValues: {[key in GristType]: [CellValue, string]} = {
   'Ref':              [ 0,     "0"     ],
   'RefList':          [ null,  "NULL"  ],
   'Text':             [ '',    "''"    ],
+  'Vector':           [ null,  "NULL"  ],
 };
 
 
@@ -202,6 +204,7 @@ const rightType: {[key in GristType]: (value: CellValue) => boolean} = {
   Bool:           isBooleanOrNull,
   Date:           isNumberOrNull,
   DateTime:       isNumberOrNull,
+  Geometry:       isString, // WKT strings
   Numeric:        isNumberOrNull,
   Id:             isNumber,
   PositionNumber: isNumber,
@@ -210,6 +213,7 @@ const rightType: {[key in GristType]: (value: CellValue) => boolean} = {
   RefList:        isListOrNull,
   Choice:         isString,
   ChoiceList:     isListOrNull,
+  Vector:         isListOrNull, // Arrays of numbers
 };
 
 export function isRightType(type: string): undefined | ((value: CellValue, options?: any) => boolean) {
@@ -312,7 +316,16 @@ export function sequelizeToGristType(sqlType: string): GristType {
     case 'ARRAY':
     case 'RANGE':
     case 'GEOMETRY':
-      throw new Error('SQL type: `' + sqlType + '` is currently untested');
+    case 'POINT':
+    case 'LINESTRING':
+    case 'POLYGON':
+    case 'MULTIPOINT':
+    case 'MULTILINESTRING':
+    case 'MULTIPOLYGON':
+    case 'GEOMETRYCOLLECTION':
+      return 'Geometry';
+    case 'VECTOR':
+      return 'Vector';
     default:
       throw new Error('Unrecognized datatype: `' + sqlType + '`');
   }

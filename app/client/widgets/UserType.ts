@@ -304,9 +304,41 @@ export const typeDefs: any = {
       }
     },
     default: 'Attachments'
+  },
+  Geometry: {
+    label: 'Geometry',
+    icon: 'FieldText',
+    widgets: {
+      TextBox: {
+        cons: 'TextBox',
+        editCons: 'TextEditor',
+        icon: 'FieldTextbox',
+        options: {
+          alignment: 'left',
+          wrap: undefined,
+        }
+      }
+    },
+    default: 'TextBox'
+  },
+  Vector: {
+    label: 'Vector',
+    icon: 'FieldNumeric',
+    widgets: {
+      TextBox: {
+        cons: 'TextBox',
+        editCons: 'TextEditor',
+        icon: 'FieldTextbox',
+        options: {
+          alignment: 'left',
+          wrap: undefined,
+        }
+      }
+    },
+    default: 'TextBox'
   }
 };
 
 // Extract widgets type to a type from the json above
 export type WidgetType = 'TextBox' | 'Markdown' | 'HyperLink' | 'Spinner'
-  | 'CheckBox' | 'Switch' | 'Reference' | 'Attachments';
+  | 'CheckBox' | 'Switch' | 'Reference' | 'Attachments' | 'Map';

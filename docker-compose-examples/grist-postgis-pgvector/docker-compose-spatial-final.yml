@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # Base de données PostgreSQL avec PostGIS et pgvector
+  postgres-spatial:
+    image: postgis/postgis:16-3.4
+    container_name: grist-postgres-spatial
+    environment:
+      POSTGRES_DB: grist
+      POSTGRES_USER: grist
+      POSTGRES_PASSWORD: grist123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --no-locale"
+    volumes:
+      - postgres_data_spatial:/var/lib/postgresql/data
+      - ./init-extensions.sql:/docker-entrypoint-initdb.d/01-init-extensions.sql
+      - ./demo_spatial_complete.sql:/docker-entrypoint-initdb.d/02-demo-data.sql
+    ports:
+      - "5434:5432"
+    networks:
+      - grist-spatial
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grist -d grist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Notre version Grist avec extensions spatiales
+  grist-spatial:
+    image: gristlabs/grist:latest
+    container_name: grist-spatial-app
+    depends_on:
+      postgres-spatial:
+        condition: service_healthy
+    environment:
+      # Configuration base de données
+      TYPEORM_TYPE: postgres
+      TYPEORM_HOST: postgres-spatial
+      TYPEORM_PORT: 5432
+      TYPEORM_DATABASE: grist
+      TYPEORM_USERNAME: grist
+      TYPEORM_PASSWORD: grist123
+      TYPEORM_LOGGING: false
+      
+      # Configuration Grist
+      GRIST_DEFAULT_EMAIL: admin@spatial.local
+      GRIST_DATA_DIR: /persist/docs
+      GRIST_INST_DIR: /persist
+      DEBUG: 1
+      
+      # Activation des fonctionnalités spatiales natives
+      GRIST_SPATIAL_ENABLED: "true"
+      GRIST_VECTOR_ENABLED: "true"
+      ALBERT_API_URL: "https://albert.api.etalab.gouv.fr/v1"
+      ALBERT_API_TOKEN: "${ALBERT_API_TOKEN}"
+      
+    volumes:
+      - grist_data_spatial:/persist
+      # Monter nos extensions spatiales
+      - ../../app/server/lib/SpatialVectorService.ts:/grist/app/server/lib/SpatialVectorService.js:ro
+      - ../../app/server/lib/NativeSpatialFunctions.ts:/grist/app/server/lib/NativeSpatialFunctions.js:ro
+      - ../../app/server/api/NativeSpatialApi.ts:/grist/app/server/api/NativeSpatialApi.js:ro
+      - ../../app/common/SpatialTypes.ts:/grist/app/common/SpatialTypes.js:ro
+      - ../../app/client/widgets/GeometryEditor.ts:/grist/static/_build/app/client/widgets/GeometryEditor.js:ro
+      - ../../app/client/widgets/VectorEditor.ts:/grist/static/_build/app/client/widgets/VectorEditor.js:ro
+      - ../../app/client/widgets/MapWidget.ts:/grist/static/_build/app/client/widgets/MapWidget.js:ro
+      - ../../app/client/widgets/UserType.ts:/grist/static/_build/app/client/widgets/UserType.js:ro
+      - ../../app/client/widgets/UserTypeImpl.ts:/grist/static/_build/app/client/widgets/UserTypeImpl.js:ro
+    ports:
+      - "8484:8484"
+    networks:
+      - grist-spatial
+    restart: unless-stopped
+
+volumes:
+  postgres_data_spatial:
+    driver: local
+  grist_data_spatial:
+    driver: local
+
+networks:
+  grist-spatial:
+    driver: bridge

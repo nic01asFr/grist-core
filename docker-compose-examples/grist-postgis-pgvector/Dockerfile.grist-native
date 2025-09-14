@@ -1,0 +1,288 @@
+# Dockerfile pour Grist avec intégration native PostGIS + pgvector + Albert API
+# Production-ready avec supervision optimisée
+
+FROM gristlabs/grist:latest
+
+USER root
+
+# Installation PostgreSQL 15 + PostGIS + pgvector en une seule couche optimisée
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        wget ca-certificates gnupg2 supervisor && \
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
+    echo "deb http://apt.postgresql.org/pub/repos/apt/ bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        postgresql-15 \
+        postgresql-contrib-15 \
+        postgresql-15-postgis-3 \
+        postgresql-server-dev-15 \
+        build-essential \
+        git \
+        clang \
+        cmake && \
+    cd /tmp && \
+    git clone --branch v0.5.1 --depth 1 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    make && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/pgvector && \
+    apt-get remove -y build-essential git postgresql-server-dev-15 clang cmake && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/* /var/tmp/*
+
+# Configuration PostgreSQL optimisée
+RUN mkdir -p /var/lib/postgresql/data /run/postgresql /var/log/postgresql /var/log/supervisor && \
+    chown -R postgres:postgres /var/lib/postgresql /run/postgresql /var/log/postgresql && \
+    chmod 755 /var/lib/postgresql
+
+# Initialisation PostgreSQL comme postgres user
+USER postgres
+RUN /usr/lib/postgresql/15/bin/initdb -D /var/lib/postgresql/data \
+    --auth-local=trust --auth-host=md5 --no-locale --encoding=UTF8 && \
+    echo "# Configuration Grist intégré" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "listen_addresses = 'localhost'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "port = 5432" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "shared_preload_libraries = 'postgis-3,vector'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "max_connections = 100" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "shared_buffers = 128MB" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "effective_cache_size = 256MB" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "maintenance_work_mem = 32MB" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "log_directory = '/var/log/postgresql'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "log_filename = 'postgresql-%Y-%m-%d.log'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "logging_collector = on" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf
+
+USER root
+
+# Script d'initialisation de la base de données Grist
+RUN echo '-- Initialisation base de données Grist avec extensions spatiales\n\
+-- Création utilisateur et base de données Grist\n\
+CREATE USER grist WITH PASSWORD '\''grist_native_2024'\'' CREATEDB;\n\
+CREATE DATABASE grist OWNER grist;\n\
+\n\
+-- Connection à la base Grist pour installer les extensions\n\
+\\c grist;\n\
+\n\
+-- Extensions spatiales et vectorielles\n\
+CREATE EXTENSION IF NOT EXISTS postgis;\n\
+CREATE EXTENSION IF NOT EXISTS postgis_topology;\n\
+CREATE EXTENSION IF NOT EXISTS vector;\n\
+\n\
+-- Tables système Grist pour les fonctionnalités étendues\n\
+CREATE SCHEMA IF NOT EXISTS grist_spatial;\n\
+\n\
+-- Table pour stocker les embeddings générés\n\
+CREATE TABLE IF NOT EXISTS grist_spatial.embeddings (\n\
+    id SERIAL PRIMARY KEY,\n\
+    table_name TEXT NOT NULL,\n\
+    row_id INTEGER NOT NULL,\n\
+    column_name TEXT NOT NULL,\n\
+    content TEXT,\n\
+    embedding VECTOR(1024),\n\
+    model_name TEXT DEFAULT '\''embeddings-small'\'',\n\
+    created_at TIMESTAMP DEFAULT NOW(),\n\
+    UNIQUE(table_name, row_id, column_name)\n\
+);\n\
+\n\
+-- Index pour recherche vectorielle optimisée\n\
+CREATE INDEX IF NOT EXISTS idx_embeddings_vector ON grist_spatial.embeddings \n\
+USING ivfflat(embedding) WITH (lists = 100);\n\
+\n\
+-- Table pour données géospatiales\n\
+CREATE TABLE IF NOT EXISTS grist_spatial.geometries (\n\
+    id SERIAL PRIMARY KEY,\n\
+    table_name TEXT NOT NULL,\n\
+    row_id INTEGER NOT NULL,\n\
+    column_name TEXT NOT NULL,\n\
+    geometry GEOMETRY,\n\
+    srid INTEGER DEFAULT 4326,\n\
+    created_at TIMESTAMP DEFAULT NOW(),\n\
+    UNIQUE(table_name, row_id, column_name)\n\
+);\n\
+\n\
+-- Index spatial\n\
+CREATE INDEX IF NOT EXISTS idx_geometries_geom ON grist_spatial.geometries \n\
+USING GIST(geometry);\n\
+\n\
+-- Fonctions utilitaires pour Grist\n\
+CREATE OR REPLACE FUNCTION grist_spatial.generate_embedding(\n\
+    content_text TEXT,\n\
+    model_name TEXT DEFAULT '\''embeddings-small'\''\n\
+) RETURNS VECTOR AS $func$\n\
+BEGIN\n\
+    -- Pour le moment, génération d'\''un embedding simulé\n\
+    -- TODO: Intégrer avec Albert API\n\
+    RETURN array_fill(random()::float, ARRAY[1024])::vector;\n\
+END;\n\
+$func$ LANGUAGE plpgsql;\n\
+\n\
+CREATE OR REPLACE FUNCTION grist_spatial.search_similar(\n\
+    query_embedding VECTOR,\n\
+    similarity_threshold FLOAT DEFAULT 0.8,\n\
+    limit_results INTEGER DEFAULT 10\n\
+) RETURNS TABLE(\n\
+    table_name TEXT,\n\
+    row_id INTEGER,\n\
+    column_name TEXT,\n\
+    content TEXT,\n\
+    similarity FLOAT\n\
+) AS $func$\n\
+BEGIN\n\
+    RETURN QUERY\n\
+    SELECT e.table_name, e.row_id, e.column_name, e.content,\n\
+           (1 - (e.embedding <-> query_embedding))::FLOAT as similarity\n\
+    FROM grist_spatial.embeddings e\n\
+    WHERE (1 - (e.embedding <-> query_embedding)) >= similarity_threshold\n\
+    ORDER BY e.embedding <-> query_embedding\n\
+    LIMIT limit_results;\n\
+END;\n\
+$func$ LANGUAGE plpgsql;\n\
+\n\
+CREATE OR REPLACE FUNCTION grist_spatial.spatial_distance(\n\
+    geom1 GEOMETRY,\n\
+    geom2 GEOMETRY\n\
+) RETURNS FLOAT AS $func$\n\
+BEGIN\n\
+    RETURN ST_Distance(geom1::geography, geom2::geography);\n\
+END;\n\
+$func$ LANGUAGE plpgsql;\n\
+\n\
+-- Permissions pour l'\''utilisateur Grist\n\
+GRANT ALL PRIVILEGES ON SCHEMA grist_spatial TO grist;\n\
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA grist_spatial TO grist;\n\
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA grist_spatial TO grist;\n\
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA grist_spatial TO grist;\n\
+\n\
+-- Confirmation d'\''installation\n\
+DO $confirmation$\n\
+DECLARE\n\
+    ext_record RECORD;\n\
+BEGIN\n\
+    RAISE NOTICE '\''🎯 GRIST NATIVE SPATIAL/VECTOR DATABASE INITIALIZED'\'';    \n\
+    FOR ext_record IN \n\
+        SELECT extname, extversion FROM pg_extension \n\
+        WHERE extname IN ('\''postgis'\'', '\''postgis_topology'\'', '\''vector'\'')\n\
+        ORDER BY extname\n\
+    LOOP\n\
+        RAISE NOTICE '\''   ✅ %: version %'\'', ext_record.extname, ext_record.extversion;\n\
+    END LOOP;\n\
+    \n\
+    RAISE NOTICE '\''🗄️ Schema grist_spatial créé avec tables et fonctions'\'';    \n\
+    RAISE NOTICE '\''🚀 Grist prêt pour intégration spatiale et vectorielle native!'\'';    \n\
+END;\n\
+$confirmation$;' > /tmp/init-grist-native.sql
+
+# Configuration Supervisor optimisée pour production
+RUN echo '[supervisord]\n\
+nodaemon=true\n\
+silent=false\n\
+logfile=/var/log/supervisor/supervisord.log\n\
+pidfile=/var/run/supervisord.pid\n\
+logfile_maxbytes=10MB\n\
+logfile_backups=3\n\
+loglevel=info\n\
+\n\
+[program:postgresql]\n\
+command=/usr/lib/postgresql/15/bin/postgres -D /var/lib/postgresql/data\n\
+user=postgres\n\
+autostart=true\n\
+autorestart=true\n\
+startretries=3\n\
+priority=100\n\
+stdout_logfile=/var/log/supervisor/postgresql.log\n\
+stderr_logfile=/var/log/supervisor/postgresql_error.log\n\
+stdout_logfile_maxbytes=10MB\n\
+stderr_logfile_maxbytes=10MB\n\
+\n\
+[program:grist-init]\n\
+command=/bin/bash -c "\n\
+    echo '\''⏳ Attente démarrage PostgreSQL...'\''; \n\
+    while ! pg_isready -h localhost -p 5432 -U postgres; do sleep 1; done; \n\
+    echo '\''🔧 Initialisation base Grist...'\''; \n\
+    su - postgres -c '\''psql -f /tmp/init-grist-native.sql'\'' && \n\
+    echo '\''✅ Base Grist initialisée avec succès'\'';\n\
+"\n\
+autostart=true\n\
+autorestart=false\n\
+priority=200\n\
+stdout_logfile=/var/log/supervisor/grist-init.log\n\
+stderr_logfile=/var/log/supervisor/grist-init_error.log\n\
+depends_on=postgresql\n\
+\n\
+[program:grist]\n\
+command=/bin/bash -c "\n\
+    echo '\''⏳ Attente initialisation base...'\''; \n\
+    sleep 10; \n\
+    echo '\''🚀 Démarrage Grist...'\''; \n\
+    cd /grist && exec node ./sandbox/supervisor.mjs;\n\
+"\n\
+user=grist\n\
+autostart=true\n\
+autorestart=true\n\
+startretries=3\n\
+priority=300\n\
+stdout_logfile=/var/log/supervisor/grist.log\n\
+stderr_logfile=/var/log/supervisor/grist_error.log\n\
+stdout_logfile_maxbytes=10MB\n\
+stderr_logfile_maxbytes=10MB\n\
+depends_on=grist-init' > /etc/supervisor/conf.d/grist-native.conf
+
+# Script d'entrée production-ready
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "🎯 GRIST NATIVE - DÉMARRAGE INTÉGRÉ"\n\
+echo "  PostgreSQL 15 + PostGIS + pgvector"\n\
+echo "  Albert API ready"\n\
+echo "  Spatial & Vector native integration"\n\
+echo ""\n\
+\n\
+# Création et permissions des répertoires\n\
+mkdir -p /var/lib/postgresql/data /var/log/postgresql /var/log/supervisor\n\
+chown -R postgres:postgres /var/lib/postgresql /var/log/postgresql\n\
+chown -R grist:grist /persist 2>/dev/null || true\n\
+\n\
+# Configuration finale\n\
+echo "✅ Répertoires configurés"\n\
+echo "🚀 Lancement Supervisor..."\n\
+echo ""\n\
+\n\
+exec "$@"' > /usr/local/bin/grist-native-entrypoint.sh && \
+    chmod +x /usr/local/bin/grist-native-entrypoint.sh
+
+# Variables d'environnement pour PostgreSQL intégré
+ENV TYPEORM_TYPE=postgres \
+    TYPEORM_HOST=localhost \
+    TYPEORM_PORT=5432 \
+    TYPEORM_DATABASE=grist \
+    TYPEORM_USERNAME=grist \
+    TYPEORM_PASSWORD=grist_native_2024 \
+    TYPEORM_LOGGING=false \
+    \
+    ALBERT_API_URL=https://albert.api.etalab.gouv.fr/v1 \
+    ALBERT_API_TOKEN=test-token \
+    ALBERT_MODEL_EMBEDDING=embeddings-small \
+    EMBEDDING_DIMENSION=1024 \
+    \
+    GRIST_SPATIAL_ENABLED=true \
+    GRIST_VECTOR_ENABLED=true \
+    GRIST_ALBERT_ENABLED=true
+
+# Sanity check pour vérification du build
+RUN echo "✅ Grist Native Build Complete" && \
+    postgres --version && \
+    echo "PostGIS version:" && \
+    find /usr -name "postgis*.so" | head -1 && \
+    echo "pgvector extension:" && \
+    find /usr -name "vector*.so" | head -1
+
+EXPOSE 8484
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8484/ && pg_isready -h localhost -p 5432 -U grist -d grist
+
+ENTRYPOINT ["/usr/local/bin/grist-native-entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/grist-native.conf"]

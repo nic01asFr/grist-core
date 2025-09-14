@@ -1,0 +1,72 @@
+services:
+  # PostgreSQL avec PostGIS et pgvector
+  grist-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: grist-postgres-spatial
+    environment:
+      POSTGRES_DB: grist
+      POSTGRES_USER: grist
+      POSTGRES_PASSWORD: grist
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-spatial.sql:/docker-entrypoint-initdb.d/init-spatial.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Grist officiel avec extensions injectées
+  grist-spatial-injected:
+    image: gristlabs/grist:latest
+    container_name: grist-spatial-injected
+    environment:
+      GRIST_DATABASE_URL: postgresql://grist:grist@grist-postgres:5432/grist
+      GRIST_SPATIAL_ENABLED: "true"
+      GRIST_VECTOR_ENABLED: "true" 
+      ALBERT_API_TOKEN: "sk-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo5MywidG9rZW5faWQiOjExODksImV4cGlyZXNfYXQiOjE3NzgxOTEyMDB9.mXyNfn1kLYP3hNe5lzraEHjGAbfyB-YfiNpsnp52f80"
+      ALBERT_API_URL: "https://albert.api.etalab.gouv.fr/v1"
+    ports:
+      - "8485:8484"
+    volumes:
+      # Injection de nos extensions JavaScript
+      - ./compiled-extensions:/grist/spatial-extensions
+      - grist_docs:/persist/docs
+    depends_on:
+      grist-postgres:
+        condition: service_healthy
+    command: |
+      bash -c "
+        echo '🚀 Démarrage Grist spatial injecté...'
+        
+        # Installer axios si nécessaire
+        if [ ! -d '/grist/node_modules/axios' ]; then
+          npm install axios
+        fi
+        
+        # Injecter nos extensions
+        node -e '
+          console.log(\"💉 Chargement extensions spatiales...\");
+          try {
+            require(\"/grist/spatial-extensions/SpatialVectorService.js\");
+            console.log(\"✅ SpatialVectorService chargé\");
+            
+            const functions = require(\"/grist/spatial-extensions/NativeSpatialFunctions.js\");
+            console.log(\"✅ Fonctions spatiales:\", Object.keys(functions));
+            
+            const api = require(\"/grist/spatial-extensions/NativeSpatialApi.js\");
+            console.log(\"✅ API spatiale chargée\");
+          } catch (e) {
+            console.log(\"⚠️ Erreur:\", e.message);
+          }
+        ' || true
+        
+        # Démarrage normal de Grist
+        exec /usr/local/bin/docker-entrypoint.sh
+      "
+
+volumes:
+  postgres_data:
+  grist_docs:

@@ -27,7 +27,7 @@
       ],
     },
     "composite": true,
-    "types" : [],
+    "types" : ["node", "express"],
     "plugins": [{
       "name": "typescript-eslint-language-service"
     }],

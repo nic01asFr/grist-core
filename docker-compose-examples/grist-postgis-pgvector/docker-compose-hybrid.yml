@@ -1,0 +1,81 @@
+version: '3.8'
+
+# Approche HYBRIDE : Grist utilise PostgreSQL interne pour la Home DB
+# et PostgreSQL externe pour les capacités spatiales/vectorielles
+
+services:
+  grist-hybrid:
+    image: gristlabs/grist:latest
+    environment:
+      # Base de données Home interne (SQLite pour simplicité)
+      TYPEORM_DATABASE: /persist/home.sqlite3
+      
+      # Configuration PostgreSQL externe pour extensions spatiales  
+      POSTGRES_SPATIAL_HOST: grist-spatial-db
+      POSTGRES_SPATIAL_PORT: 5432
+      POSTGRES_SPATIAL_DB: spatial_data
+      POSTGRES_SPATIAL_USER: grist
+      POSTGRES_SPATIAL_PASSWORD: ${DATABASE_PASSWORD}
+      
+      # Albert API Configuration
+      ALBERT_API_URL: ${ALBERT_API_URL:-https://albert.api.etalab.gouv.fr/v1}
+      ALBERT_API_TOKEN: ${ALBERT_API_TOKEN:-test-token}
+      ALBERT_MODEL_EMBEDDING: ${ALBERT_MODEL_EMBEDDING:-embeddings-small}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+
+      # Grist Configuration
+      DEBUG: 1
+      GRIST_DEFAULT_EMAIL: admin@example.com
+
+    volumes:
+      - grist-home-data:/persist
+      
+    ports:
+      - "8485:8484"
+
+    depends_on:
+      grist-spatial-db:
+        condition: service_healthy
+        
+    restart: unless-stopped
+
+  # Base de données dédiée pour capacités spatiales/vectorielles  
+  grist-spatial-db:
+    image: grist-postgis-pgvector-grist-db-complete:latest
+    environment:
+      POSTGRES_DB: spatial_data
+      POSTGRES_USER: grist
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: md5
+      
+    volumes:
+      - spatial-data:/var/lib/postgresql/data
+      - ./init-spatial-extensions.sql:/docker-entrypoint-initdb.d/01-init-extensions.sql
+      
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grist -d spatial_data"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      
+    ports:
+      - "5434:5432"  # Port accessible pour tests directs
+      
+    command: >
+      postgres
+      -c shared_preload_libraries='postgis-3,vector'
+      -c max_connections=100
+      -c shared_buffers=128MB
+      
+    restart: unless-stopped
+
+volumes:
+  grist-home-data:
+    driver: local
+  spatial-data:
+    driver: local
+
+networks:
+  default:
+    name: grist-hybrid

@@ -1,0 +1,52 @@
+services:
+  grist:
+    image: gristlabs/grist:latest
+    environment:
+      # Postgres database setup
+      TYPEORM_DATABASE: grist
+      TYPEORM_USERNAME: grist
+      TYPEORM_HOST: grist-db
+      TYPEORM_LOGGING: false
+      TYPEORM_PASSWORD: ${DATABASE_PASSWORD}
+      TYPEORM_PORT: 5432
+      TYPEORM_TYPE: postgres
+
+      # Redis setup for performance
+      REDIS_URL: redis://grist-redis
+
+    volumes:
+      # Where to store persistent data, such as documents.
+      - ${PERSIST_DIR}/grist:/persist
+    ports:
+      - 8484:8484
+    depends_on:
+      grist-db:
+        condition: service_healthy
+      grist-redis:
+        condition: service_started
+
+  grist-db:
+    image: postgis/postgis:16-3.4
+    environment:
+        POSTGRES_DB: grist
+        POSTGRES_USER: grist
+        POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - ${PERSIST_DIR}/postgres:/var/lib/postgresql/data
+      # Script d'initialisation pour installer pg_vector
+      - ./init-extensions.sql:/docker-entrypoint-initdb.d/01-init-extensions.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grist -d grist"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c shared_preload_libraries='postgis-3'
+      -c log_statement=all
+
+  grist-redis:
+    image: redis:alpine
+    volumes:
+      - ${PERSIST_DIR}/redis:/data
+    command: redis-server --appendonly yes

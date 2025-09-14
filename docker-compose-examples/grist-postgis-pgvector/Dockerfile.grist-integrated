@@ -1,0 +1,89 @@
+# Dockerfile pour Grist avec PostgreSQL + PostGIS + pgvector intégrés
+# Approche single-container avec supervision
+
+FROM gristlabs/grist:latest AS grist-base
+
+# Étape 1: Installation PostgreSQL + PostGIS + pgvector
+USER root
+
+# Ajout du repository PostgreSQL officiel
+RUN apt-get update && \
+    apt-get install -y wget ca-certificates lsb-release gnupg2 && \
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
+    echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+
+# Installation PostgreSQL 16 avec PostGIS
+RUN apt-get update && \
+    apt-get install -y \
+    postgresql-16 \
+    postgresql-contrib-16 \
+    postgresql-16-postgis-3 \
+    postgresql-16-postgis-3-scripts \
+    postgis \
+    postgresql-server-dev-16 \
+    build-essential \
+    git \
+    clang-13 \
+    llvm-13 \
+    cmake \
+    supervisor && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configuration des outils de compilation pour pgvector
+RUN ln -sf /usr/bin/clang-13 /usr/bin/clang && \
+    ln -sf /usr/bin/llvm-config-13 /usr/bin/llvm-config
+
+# Compilation et installation pgvector
+RUN cd /tmp && \
+    git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    CC=clang-13 make OPTFLAGS="" && \
+    make install
+
+# Étape 2: Configuration PostgreSQL
+RUN mkdir -p /var/lib/postgresql/data && \
+    chown -R postgres:postgres /var/lib/postgresql && \
+    mkdir -p /run/postgresql && \
+    chown -R postgres:postgres /run/postgresql
+
+# Initialisation de la base de données PostgreSQL
+USER postgres
+RUN /usr/lib/postgresql/16/bin/initdb -D /var/lib/postgresql/data --auth-local=trust --auth-host=md5
+
+# Configuration PostgreSQL pour Grist
+RUN echo "host all all 127.0.0.1/32 md5" >> /var/lib/postgresql/data/pg_hba.conf && \
+    echo "listen_addresses = '127.0.0.1'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "port = 5432" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "shared_preload_libraries = 'postgis-3,vector'" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "max_connections = 100" >> /var/lib/postgresql/data/postgresql.conf && \
+    echo "shared_buffers = 128MB" >> /var/lib/postgresql/data/postgresql.conf
+
+# Étape 3: Configuration Supervisor pour gérer PostgreSQL + Grist
+USER root
+
+# Script d'initialisation de la base de données Grist
+COPY init-grist-database.sql /docker-entrypoint-initdb.d/
+
+# Configuration Supervisor
+RUN mkdir -p /var/log/supervisor
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Script d'initialisation
+COPY grist-integrated-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/grist-integrated-entrypoint.sh
+
+# Variables d'environnement pour PostgreSQL intégré
+ENV TYPEORM_TYPE=postgres \
+    TYPEORM_HOST=127.0.0.1 \
+    TYPEORM_PORT=5432 \
+    TYPEORM_DATABASE=grist \
+    TYPEORM_USERNAME=grist \
+    TYPEORM_PASSWORD=grist_integrated_2024 \
+    TYPEORM_LOGGING=false
+
+# Port exposé (uniquement Grist, PostgreSQL interne)
+EXPOSE 8484
+
+# Utiliser notre entrypoint personnalisé
+ENTRYPOINT ["/usr/local/bin/grist-integrated-entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

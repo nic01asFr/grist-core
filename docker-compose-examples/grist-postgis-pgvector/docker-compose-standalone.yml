@@ -1,0 +1,21 @@
+services:
+  grist-spatial-standalone:
+    image: grist-spatial-standalone:latest
+    container_name: grist-spatial-standalone
+    ports:
+      - "8484:8484"
+    volumes:
+      - grist_data_standalone:/persist
+    environment:
+      - GRIST_DEFAULT_EMAIL=admin@spatial.local
+      - ALBERT_API_TOKEN=sk-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo5MywidG9rZW5faWQiOjExODksImV4cGlyZXNfYXQiOjE3NzgxOTEyMDB9.mXyNfn1kLYP3hNe5lzraEHjGAbfyB-YfiNpsnp52f80
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8484 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  grist_data_standalone:
+    driver: local

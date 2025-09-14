@@ -1,0 +1,29 @@
+# Dockerfile pour PostgreSQL avec PostGIS ET pg_vector
+FROM postgis/postgis:16-3.4
+
+# Installer les dépendances pour compiler pg_vector
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        postgresql-server-dev-16 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Compiler et installer pg_vector
+RUN cd /tmp && \
+    git clone --branch v0.5.1 --depth 1 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    make clean && \
+    make OPTFLAGS="" && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/pgvector
+
+# Nettoyer les dépendances de compilation
+RUN apt-get purge -y --auto-remove \
+        build-essential \
+        git \
+        postgresql-server-dev-16
+
+# Configuration PostgreSQL pour charger pg_vector
+RUN echo "shared_preload_libraries = 'postgis-3,vector'" >> /usr/share/postgresql/16/postgresql.conf.sample
