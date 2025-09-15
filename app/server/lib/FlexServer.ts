@@ -46,6 +46,7 @@ import {createSavedDoc} from 'app/server/lib/createSavedDoc';
 import {addDiscourseConnectEndpoints} from 'app/server/lib/DiscourseConnect';
 import {addDocApiRoutes} from 'app/server/lib/DocApi';
 import {DocManager} from 'app/server/lib/DocManager';
+import {addSpatialEndpoints} from 'app/server/lib/SpatialEndpoints';
 import {getSqliteMode} from 'app/server/lib/DocStorage';
 import {DocWorker} from 'app/server/lib/DocWorker';
 import {DocWorkerLoadTracker, getDocWorkerLoadTracker} from 'app/server/lib/DocWorkerLoadTracker';
@@ -2088,6 +2089,12 @@ export class FlexServer implements GristServer {
 
     // Some configurations may add extra endpoints. This seems a fine time to add them.
     this.create.addExtraHomeEndpoints(this, this.app);
+  }
+
+  public addSpatialEndpoints() {
+    if (this._check('spatial-api', 'homedb', 'json', 'api-mw')) { return; }
+    // Add spatial and vector endpoints
+    addSpatialEndpoints(this.app, this._docManager);
   }
 
   public getLatestVersionAvailable() {

@@ -236,6 +236,27 @@ def run(sandbox):
 
   register_import_parsers(sandbox)
 
+  # ============================================================================
+  # ENREGISTREMENT DES FONCTIONS SPATIALES/VECTORIELLES PERSONNALISÉES
+  # ============================================================================
+  # Importer et enregistrer les fonctions depuis usertypes.py
+  try:
+    from usertypes import ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY
+    
+    # Enregistrer chaque fonction dans le sandbox
+    sandbox.register('ST_DISTANCE', ST_DISTANCE)
+    sandbox.register('ST_AREA', ST_AREA)
+    sandbox.register('ST_CONTAINS', ST_CONTAINS)
+    sandbox.register('ST_CENTROID', ST_CENTROID)
+    sandbox.register('VECTOR_SIMILARITY', VECTOR_SIMILARITY)
+    
+    log.info("✅ Fonctions spatiales/vectorielles enregistrées: ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY")
+    
+  except ImportError as e:
+    log.warning("❌ Échec import fonctions spatiales/vectorielles: %s", e)
+  except Exception as e:
+    log.warning("❌ Échec enregistrement fonctions spatiales/vectorielles: %s", e)
+
   log.info("Ready")  # This log message is significant for checkpointing.
   sandbox.run()
 

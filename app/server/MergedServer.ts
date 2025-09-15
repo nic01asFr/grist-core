@@ -196,6 +196,7 @@ export class MergedServer {
         await this.flexServer.addTelemetry();
         this.flexServer.addAssistant();
         await this.flexServer.addDoc();
+        this.flexServer.addSpatialEndpoints(); // DÉPLACÉ APRÈS addDoc() pour que _docManager soit initialisé
       }
 
       if (this.hasComponent("home")) {
