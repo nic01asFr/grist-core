@@ -197,6 +197,7 @@ export class MergedServer {
         this.flexServer.addAssistant();
         await this.flexServer.addDoc();
         this.flexServer.addSpatialEndpoints(); // DÉPLACÉ APRÈS addDoc() pour que _docManager soit initialisé
+        this.flexServer.addEmbeddingEndpoints(); // AJOUTÉ POUR AUTO-EMBEDDING
       }
 
       if (this.hasComponent("home")) {

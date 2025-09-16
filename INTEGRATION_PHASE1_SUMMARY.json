@@ -1,0 +1,42 @@
+{
+  "files_created": [
+    "sandbox/grist/embedding_manager.py",
+    "app/server/lib/EmbeddingEndpoints.ts"
+  ],
+  "files_to_modify_manually": [
+    {
+      "file": "sandbox/grist/docactions.py",
+      "changes": [
+        "Ajouter import AutoEmbeddingManager",
+        "Initialiser dans __init__",
+        "Ajouter hooks dans BulkUpdateRecord/BulkAddRecord"
+      ]
+    },
+    {
+      "file": "sandbox/grist/main.py",
+      "changes": [
+        "Ajouter import fonctions AUTO_EMBEDDING",
+        "Enregistrer dans sandbox.register()"
+      ]
+    },
+    {
+      "file": "app/server/lib/FlexServer.ts",
+      "changes": [
+        "Importer addEmbeddingEndpoints",
+        "Ajouter méthode addEmbeddingEndpoints()"
+      ]
+    },
+    {
+      "file": "app/server/MergedServer.ts",
+      "changes": [
+        "Appeler this.flexServer.addEmbeddingEndpoints()"
+      ]
+    }
+  ],
+  "next_steps": [
+    "Modifier manuellement les fichiers listés",
+    "Rebuilder l'image Docker",
+    "Tester les nouveaux endpoints",
+    "Implémenter Phase 2 (Interface UI)"
+  ]
+}

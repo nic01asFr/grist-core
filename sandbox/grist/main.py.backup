@@ -257,23 +257,6 @@ def run(sandbox):
   except Exception as e:
     log.warning("❌ Échec enregistrement fonctions spatiales/vectorielles: %s", e)
 
-  # ============================================================================
-  # ENREGISTREMENT DES FONCTIONS AUTO-EMBEDDING
-  # ============================================================================
-  try:
-    from embedding_manager import AUTO_EMBEDDING, VECTOR_SEARCH_SYSTEM
-    
-    # Enregistrer les fonctions d'embedding dans le sandbox
-    sandbox.register('AUTO_EMBEDDING', AUTO_EMBEDDING)
-    sandbox.register('VECTOR_SEARCH_SYSTEM', VECTOR_SEARCH_SYSTEM)
-    
-    log.info("✅ Fonctions auto-embedding enregistrées: AUTO_EMBEDDING, VECTOR_SEARCH_SYSTEM")
-    
-  except ImportError as e:
-    log.warning("❌ Échec import fonctions auto-embedding: %s", e)
-  except Exception as e:
-    log.warning("❌ Échec enregistrement fonctions auto-embedding: %s", e)
-
   log.info("Ready")  # This log message is significant for checkpointing.
   sandbox.run()
 

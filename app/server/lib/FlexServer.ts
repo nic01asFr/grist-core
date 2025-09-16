@@ -47,6 +47,7 @@ import {addDiscourseConnectEndpoints} from 'app/server/lib/DiscourseConnect';
 import {addDocApiRoutes} from 'app/server/lib/DocApi';
 import {DocManager} from 'app/server/lib/DocManager';
 import {addSpatialEndpoints} from 'app/server/lib/SpatialEndpoints';
+import {addEmbeddingEndpoints} from 'app/server/lib/EmbeddingEndpoints';
 import {getSqliteMode} from 'app/server/lib/DocStorage';
 import {DocWorker} from 'app/server/lib/DocWorker';
 import {DocWorkerLoadTracker, getDocWorkerLoadTracker} from 'app/server/lib/DocWorkerLoadTracker';
@@ -2095,6 +2096,12 @@ export class FlexServer implements GristServer {
     if (this._check('spatial-api', 'homedb', 'json', 'api-mw')) { return; }
     // Add spatial and vector endpoints
     addSpatialEndpoints(this.app, this._docManager);
+  }
+
+  public addEmbeddingEndpoints() {
+    if (this._check('embedding-api', 'homedb', 'json', 'api-mw')) { return; }
+    // Add auto-embedding and semantic search endpoints
+    addEmbeddingEndpoints(this.app, this._docManager);
   }
 
   public getLatestVersionAvailable() {

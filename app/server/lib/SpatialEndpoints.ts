@@ -33,7 +33,7 @@ async function callPythonFunction(activeDoc: ActiveDoc, req: RequestWithLogin, f
         log.info('✅ Utilisation du sandbox Python natif');
         
         try {
-          const result = await dataEngine.pyCall(funcName, args);
+          const result = await dataEngine.pyCall(funcName, ...args);
           log.info(`✅ Résultat Python natif pour ${funcName}:`, result);
           return result;
           
