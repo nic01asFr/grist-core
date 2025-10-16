@@ -154,7 +154,7 @@ def guess_col_info(values, doc_model):
 
     # Use the exported guessColInfo if we're connected to JS
     from sandbox import default_sandbox
-    if default_sandbox:
+    if default_sandbox and hasattr(doc_model, 'doc_info'):
       doc_info = doc_model.doc_info.lookupOne()
       try:
         doc_settings = json.loads(doc_info.documentSettings)
@@ -1019,6 +1019,10 @@ class UserActions(object):
         # If the values are all blank (None or empty string) leave the column empty
         if not col_info:
           return values
+        # Vérifier que DocModel est initialisé avant d'accéder aux colonnes
+        if not hasattr(self._docmodel, 'columns'):
+          # DocModel pas encore prêt, retourner les valeurs sans mise à jour de type
+          return values
         col_rec = self._docmodel.get_column_rec(table_id, col_id)
         self._docmodel.update([col_rec], **col_info)
       self.ModifyColumn(table_id, col_id, {'isFormula': False})
@@ -1619,14 +1623,17 @@ class UserActions(object):
 
   @useraction
   def RemoveStaleObjects(self):
-    self._docmodel.remove([
-      col for col in self._docmodel.columns.all if _is_transform_col(col.colId)
-    ])
-    temporary_table_recs = [
-      tab for tab in self._docmodel.tables.all if _is_temporary_table(tab.tableId)
-    ]
-    for table_rec in temporary_table_recs:
-      self.RemoveTable(table_rec.tableId)
+    # Vérifier que DocModel est initialisé avant d'accéder aux colonnes
+    if hasattr(self._docmodel, 'columns'):
+      self._docmodel.remove([
+        col for col in self._docmodel.columns.all if _is_transform_col(col.colId)
+      ])
+    if hasattr(self._docmodel, 'tables'):
+      temporary_table_recs = [
+        tab for tab in self._docmodel.tables.all if _is_temporary_table(tab.tableId)
+      ]
+      for table_rec in temporary_table_recs:
+        self.RemoveTable(table_rec.tableId)
 
   # Helper function to get a helper column with the given formula, or to add one if none
   # currently exist.
@@ -2056,6 +2063,14 @@ class UserActions(object):
     # Add a manualSort column.
     if manual_sort:
       columns.insert(0, column.MANUAL_SORT_COL_INFO.copy())
+
+    # Add embedding system columns automatically
+    print(f"[doAddTable] DEBUG: Ajout des colonnes système d'embedding pour table {table_id}", flush=True)
+    print(f"[doAddTable] DEBUG: Colonnes avant ajout: {len(columns)}", flush=True)
+    columns.append(column.EMBEDDING_COL_INFO.copy())
+    columns.append(column.EMBEDDING_HASH_COL_INFO.copy())
+    print(f"[doAddTable] DEBUG: Colonnes après ajout: {len(columns)}", flush=True)
+    print(f"[doAddTable] DEBUG: Colonnes ajoutées: {[column.EMBEDDING_COL, column.EMBEDDING_HASH_COL]}", flush=True)
 
     # If needed, transform table_id into a valid identifier, and add a suffix to make it unique.
     table_title = table_id

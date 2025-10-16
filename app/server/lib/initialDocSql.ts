@@ -52,6 +52,8 @@ INSERT INTO _grist_Tables_column VALUES(1,1,1,'manualSort','ManualSortPos','',0,
 INSERT INTO _grist_Tables_column VALUES(2,1,2,'A','Any','',1,'','A','',0,0,0,0,NULL,0,0,NULL);
 INSERT INTO _grist_Tables_column VALUES(3,1,3,'B','Any','',1,'','B','',0,0,0,0,NULL,0,0,NULL);
 INSERT INTO _grist_Tables_column VALUES(4,1,4,'C','Any','',1,'','C','',0,0,0,0,NULL,0,0,NULL);
+INSERT INTO _grist_Tables_column VALUES(5,1,5,'grist_record_embedding','Vector','',0,'','grist_record_embedding','',0,0,0,0,NULL,0,0,NULL);
+INSERT INTO _grist_Tables_column VALUES(6,1,6,'grist_embedding_hash','Text','',0,'','grist_embedding_hash','',0,0,0,0,NULL,0,0,NULL);
 CREATE TABLE IF NOT EXISTS "_grist_Imports" (id INTEGER PRIMARY KEY, "tableRef" INTEGER DEFAULT 0, "origFileName" TEXT DEFAULT '', "parseFormula" TEXT DEFAULT '', "delimiter" TEXT DEFAULT '', "doublequote" BOOLEAN DEFAULT 0, "escapechar" TEXT DEFAULT '', "quotechar" TEXT DEFAULT '', "skipinitialspace" BOOLEAN DEFAULT 0, "encoding" TEXT DEFAULT '', "hasHeaders" BOOLEAN DEFAULT 0);
 CREATE TABLE IF NOT EXISTS "_grist_External_database" (id INTEGER PRIMARY KEY, "host" TEXT DEFAULT '', "port" INTEGER DEFAULT 0, "username" TEXT DEFAULT '', "dialect" TEXT DEFAULT '', "database" TEXT DEFAULT '', "storage" TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS "_grist_External_table" (id INTEGER PRIMARY KEY, "tableRef" INTEGER DEFAULT 0, "databaseRef" INTEGER DEFAULT 0, "tableName" TEXT DEFAULT '');
@@ -94,7 +96,7 @@ CREATE TABLE IF NOT EXISTS "_grist_ACLMemberships" (id INTEGER PRIMARY KEY, "par
 CREATE TABLE IF NOT EXISTS "_grist_Filters" (id INTEGER PRIMARY KEY, "viewSectionRef" INTEGER DEFAULT 0, "colRef" INTEGER DEFAULT 0, "filter" TEXT DEFAULT '', "pinned" BOOLEAN DEFAULT 0);
 CREATE TABLE IF NOT EXISTS "_grist_Cells" (id INTEGER PRIMARY KEY, "tableRef" INTEGER DEFAULT 0, "colRef" INTEGER DEFAULT 0, "rowId" INTEGER DEFAULT 0, "root" BOOLEAN DEFAULT 0, "parentId" INTEGER DEFAULT 0, "type" INTEGER DEFAULT 0, "content" TEXT DEFAULT '', "userRef" TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS "_grist_Shares" (id INTEGER PRIMARY KEY, "linkId" TEXT DEFAULT '', "options" TEXT DEFAULT '', "label" TEXT DEFAULT '', "description" TEXT DEFAULT '');
-CREATE TABLE IF NOT EXISTS "Table1" (id INTEGER PRIMARY KEY, "manualSort" NUMERIC DEFAULT 1e999, "A" BLOB DEFAULT NULL, "B" BLOB DEFAULT NULL, "C" BLOB DEFAULT NULL);
+CREATE TABLE IF NOT EXISTS "Table1" (id INTEGER PRIMARY KEY, "manualSort" NUMERIC DEFAULT 1e999, "A" BLOB DEFAULT NULL, "B" BLOB DEFAULT NULL, "C" BLOB DEFAULT NULL, "grist_record_embedding" TEXT DEFAULT NULL, "grist_embedding_hash" TEXT DEFAULT NULL);
 CREATE INDEX _grist_Attachments_fileIdent ON _grist_Attachments(fileIdent);
 COMMIT;
 `;

@@ -24,6 +24,10 @@ iso8601==0.1.12
     # via -r core/sandbox/requirements.in
 lazy-object-proxy==1.6.0
     # via astroid
+numpy==1.24.3
+    # via -r core/sandbox/requirements.in (for embedding_manager)
+scipy==1.10.1
+    # via -r core/sandbox/requirements.in (for embedding_manager VECTOR_SEARCH)
 openpyxl==3.0.10
     # via -r core/sandbox/requirements.in
 phonenumberslite==8.12.57
@@ -34,6 +38,8 @@ pure-eval==0.2.2
     #   stack-data
 python-dateutil==2.8.2
     # via -r core/sandbox/requirements.in
+requests==2.31.0
+    # via -r core/sandbox/requirements.in (for embedding_manager)
 roman==3.3
     # via -r core/sandbox/requirements.in
 six==1.17.0

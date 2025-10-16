@@ -126,10 +126,19 @@ COPY --from=sandbox /runsc /usr/bin/runsc
 
 # Add files needed for running server.
 COPY package.json /grist/package.json
-COPY bower_components /grist/bower_components
 COPY sandbox /grist/sandbox
 COPY plugins /grist/plugins
 COPY static /grist/static
+
+# Create proper symbolic links for bower_components instead of copying text stubs
+RUN mkdir -p /grist/bower_components /grist/static/ui-assets && \
+    cd /grist/bower_components && \
+    ln -s ../node_modules/bootstrap bootstrap && \
+    ln -s ../node_modules/bootstrap-datepicker bootstrap-datepicker && \
+    ln -s ../node_modules/jquery jquery && \
+    ln -s ../node_modules/components-jqueryui jqueryui && \
+    cd /grist/static/ui-assets && \
+    ln -s ../../node_modules/components-jqueryui jqueryui
 
 # Make optional pyodide sandbox available
 COPY --from=builder /grist/sandbox/pyodide /grist/sandbox/pyodide

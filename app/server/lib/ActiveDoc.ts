@@ -138,6 +138,7 @@ import {
 import {shortDesc} from 'app/server/lib/shortDesc';
 import {TableMetadataLoader} from 'app/server/lib/TableMetadataLoader';
 import {DocTriggers} from 'app/server/lib/Triggers';
+import {EmbeddingManager} from 'app/server/lib/EmbeddingManager';
 import {fetchURL, FileUploadInfo, globalUploadSet, UploadInfo} from 'app/server/lib/uploads';
 import assert from 'assert';
 import {Mutex} from 'async-mutex';
@@ -275,6 +276,7 @@ export class ActiveDoc extends EventEmitter {
   private readonly _server: GristServer = this._docManager.gristServer;
   private _log = new LogMethods('ActiveDoc ', (s: OptDocSession | null) => this.getLogMeta(s));
   private _triggers: DocTriggers;
+  private _embeddingManager: EmbeddingManager;
   private _requests: DocRequests;
   private _dataEngine: Promise<ISandbox>|null = null;
   private _activeDocImport: ActiveDocImport;
@@ -424,6 +426,8 @@ export class ActiveDoc extends EventEmitter {
     this.docStorage = new DocStorage(_docManager.storageManager, _docName);
     this.docClients = new DocClients(this);
     this._triggers = new DocTriggers(this);
+    this._embeddingManager = new EmbeddingManager(this);
+    this._embeddingManager.start(); // Start async worker for embedding processing
     this._requests = new DocRequests(this);
     this._actionHistory = new ActionHistoryImpl(this.docStorage);
     this.docPluginManager = _docManager.pluginManager
@@ -492,6 +496,7 @@ export class ActiveDoc extends EventEmitter {
   public get isShuttingDown(): boolean { return this._shuttingDown; }
 
   public get triggers(): DocTriggers { return this._triggers; }
+  public get embeddingManager(): EmbeddingManager { return this._embeddingManager; }
 
   public get rowLimitRatio(): number {
     return getUsageRatio(
@@ -2411,6 +2416,7 @@ export class ActiveDoc extends EventEmitter {
       }
 
       this._triggers.shutdown();
+      await this._embeddingManager.shutdown();
 
       // attachmentFileManager needs to shut down before DocStorage, to allow transfers to finish.
       await safeCallAndWait('attachmentFileManager',

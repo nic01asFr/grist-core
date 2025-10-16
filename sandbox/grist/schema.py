@@ -13,7 +13,7 @@ from collections import OrderedDict, namedtuple
 
 import actions
 
-SCHEMA_VERSION = 44
+SCHEMA_VERSION = 45
 
 def make_column(col_id, col_type, formula='', isFormula=False):
   return {

@@ -2101,7 +2101,7 @@ export class FlexServer implements GristServer {
   public addEmbeddingEndpoints() {
     if (this._check('embedding-api', 'homedb', 'json', 'api-mw')) { return; }
     // Add auto-embedding and semantic search endpoints
-    addEmbeddingEndpoints(this.app, this._docManager);
+    addEmbeddingEndpoints(this.app, this._docManager, this._dbManager, this);
   }
 
   public getLatestVersionAvailable() {

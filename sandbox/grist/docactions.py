@@ -4,11 +4,32 @@ import actions
 import schema
 from objtypes import strict_equal
 
+# AJOUT POUR EMBEDDING - Intégration optimale
+try:
+    from embedding_manager import AutoEmbeddingManager, _set_embedding_manager
+    EMBEDDING_AVAILABLE = True
+except ImportError:
+    EMBEDDING_AVAILABLE = False
+    AutoEmbeddingManager = None
+    _set_embedding_manager = None
+
 log = logging.getLogger(__name__)
 
 class DocActions(object):
   def __init__(self, engine):
     self._engine = engine
+    
+    # AJOUT POUR EMBEDDING - Initialisation optimale
+    self._embedding_manager = None
+    if EMBEDDING_AVAILABLE:
+      try:
+        self._embedding_manager = AutoEmbeddingManager(self._engine)
+        # Configurer l'instance globale pour les fonctions exposées
+        _set_embedding_manager(self._embedding_manager)
+        log.info("✅ Gestionnaire Auto-Embedding initialisé et configuré globalement")
+      except Exception as e:
+        log.warning(f"⚠️ Échec initialisation Auto-Embedding: {e}")
+        self._embedding_manager = None
 
   #----------------------------------------
   # Actions on records.
@@ -28,6 +49,18 @@ class DocActions(object):
     self._engine.out_actions.summary.add_records(table_id, row_ids)
 
     self._engine.add_records(table_id, row_ids, column_values)
+
+    # DÉSACTIVÉ: Hook BulkAddRecord - remplacé par queue asynchrone Node.js
+    # La génération d'embeddings est maintenant gérée par EmbeddingManager.ts (queue asynchrone)
+    # voir app/server/lib/Sharing.ts:180-193 pour l'appel à detectAndQueueEmbeddings()
+    #
+    # if self._embedding_manager and not table_id.startswith('_grist_'):
+    #   try:
+    #     embedding_requests = self._embedding_manager.detect_embedding_needs(table_id, row_ids, column_values)
+    #     if embedding_requests:
+    #       self._embedding_manager.queue_embedding_generation(embedding_requests)
+    #   except Exception as e:
+    #     log.debug(f"Hook embedding BulkAddRecord: {e}")
 
   def RemoveRecord(self, table_id, row_id):
     return self.BulkRemoveRecord(table_id, [row_id])
@@ -92,6 +125,27 @@ class DocActions(object):
     # Invalidate the updated rows, just for the columns that got changed (and, as always,
     # anything that depends on them).
     self._engine.invalidate_records(table_id, row_ids, col_ids=columns.keys())
+
+    # DÉSACTIVÉ: Hook BulkUpdateRecord automatique - remplacé par queue asynchrone Node.js
+    # La génération d'embeddings est maintenant gérée par EmbeddingManager.ts (queue asynchrone)
+    # voir app/server/lib/Sharing.ts:180-193 pour l'appel à detectAndQueueEmbeddings()
+    #
+    # if self._embedding_manager and not table_id.startswith('_grist_'):
+    #   try:
+    #     from embedding_manager import get_text_columns, should_include_in_embedding, AUTO_EMBEDDING
+    #     table = self._engine.tables.get(table_id)
+    #     if table:
+    #       text_columns = get_text_columns(table)
+    #       modified_text_cols = [col_id for col_id in columns.keys() if col_id in text_columns]
+    #       if modified_text_cols:
+    #         log.info(f"Colonnes texte modifiées dans {table_id}: {modified_text_cols}, régénération embeddings")
+    #         for row_id in row_ids:
+    #           try:
+    #             AUTO_EMBEDDING(table_id, row_id, 'albert')
+    #           except Exception as embed_error:
+    #             log.debug(f"Erreur génération embedding pour {table_id}:{row_id}: {embed_error}")
+    #   except Exception as e:
+    #     log.debug(f"Hook embedding BulkUpdateRecord: {e}")
 
     # If the column update changes its trigger-formula conditions, rebuild dependencies.
     if (table_id == "_grist_Tables_column" and

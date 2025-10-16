@@ -25,7 +25,25 @@ MANUAL_SORT_COL_INFO = {
 }
 MANUAL_SORT_DEFAULT = 2147483647.0
 
-SPECIAL_COL_IDS = {'id', MANUAL_SORT}
+# System columns for embedding functionality
+# Note: Column IDs cannot start with underscore due to Grist constraints
+EMBEDDING_COL = 'grist_record_embedding'
+EMBEDDING_COL_INFO = {
+  'id': EMBEDDING_COL,
+  'type': 'Text',
+  'formula': '',
+  'isFormula': False
+}
+
+EMBEDDING_HASH_COL = 'grist_embedding_hash'
+EMBEDDING_HASH_COL_INFO = {
+  'id': EMBEDDING_HASH_COL,
+  'type': 'Text',
+  'formula': '',
+  'isFormula': False
+}
+
+SPECIAL_COL_IDS = {'id', MANUAL_SORT, EMBEDDING_COL, EMBEDDING_HASH_COL}
 
 
 def is_visible_column(col_id):

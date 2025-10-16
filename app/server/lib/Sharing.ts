@@ -177,6 +177,21 @@ export class Sharing {
         await this._activeDoc.handleTriggers(localActionBundle) :
         summarizeAction(localActionBundle);
 
+      // Queue embeddings asynchronously (non-blocking) - after triggers but before broadcasting
+      if (!isSingleCalculateAction) {
+        setImmediate(() => {
+          this._activeDoc.embeddingManager.detectAndQueueEmbeddings(
+            asActionGroup(this._actionHistory, localActionBundle, {
+              clientId: client?.clientId,
+              retValues: sandboxActionBundle.retValues,
+              internal,
+            })
+          ).catch(err => {
+            this._log.warn(docSession, 'Error queuing embeddings:', err);
+          });
+        });
+      }
+
       // Opportunistically use actionSummary to see if _grist_Shares was
       // changed.
       if (actionSummary.tableDeltas._grist_Shares) {

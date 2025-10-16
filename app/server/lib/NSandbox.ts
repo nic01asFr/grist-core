@@ -935,6 +935,28 @@ export function getInsertedEnv(options: ISandboxOptions) {
     env.GRIST_FALSY_VALUES = process.env.GRIST_FALSY_VALUES;
   }
 
+  // Pass Albert API configuration to sandbox for embedding generation
+  if (process.env.ALBERT_API_TOKEN) {
+    env.ALBERT_API_TOKEN = process.env.ALBERT_API_TOKEN;
+  }
+
+  if (process.env.ALBERT_API_URL) {
+    env.ALBERT_API_URL = process.env.ALBERT_API_URL;
+  }
+
+  if (process.env.ALBERT_MODEL_EMBEDDING) {
+    env.ALBERT_MODEL_EMBEDDING = process.env.ALBERT_MODEL_EMBEDDING;
+  }
+
+  // Pass OpenAI API configuration as fallback option for embedding
+  if (process.env.OPENAI_API_TOKEN) {
+    env.OPENAI_API_TOKEN = process.env.OPENAI_API_TOKEN;
+  }
+
+  if (process.env.OPENAI_MODEL) {
+    env.OPENAI_MODEL = process.env.OPENAI_MODEL;
+  }
+
   return env;
 }
 

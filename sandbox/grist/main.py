@@ -261,13 +261,14 @@ def run(sandbox):
   # ENREGISTREMENT DES FONCTIONS AUTO-EMBEDDING
   # ============================================================================
   try:
-    from embedding_manager import AUTO_EMBEDDING, VECTOR_SEARCH_SYSTEM
-    
+    from embedding_manager import AUTO_EMBEDDING, VECTOR_SEARCH_SYSTEM, CREATE_SYSTEM_EMBEDDING_FIELDS
+
     # Enregistrer les fonctions d'embedding dans le sandbox
     sandbox.register('AUTO_EMBEDDING', AUTO_EMBEDDING)
     sandbox.register('VECTOR_SEARCH_SYSTEM', VECTOR_SEARCH_SYSTEM)
-    
-    log.info("✅ Fonctions auto-embedding enregistrées: AUTO_EMBEDDING, VECTOR_SEARCH_SYSTEM")
+    sandbox.register('CREATE_SYSTEM_EMBEDDING_FIELDS', CREATE_SYSTEM_EMBEDDING_FIELDS)
+
+    log.info("✅ Fonctions auto-embedding enregistrées: AUTO_EMBEDDING, VECTOR_SEARCH_SYSTEM, CREATE_SYSTEM_EMBEDDING_FIELDS")
     
   except ImportError as e:
     log.warning("❌ Échec import fonctions auto-embedding: %s", e)

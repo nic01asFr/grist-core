@@ -101,3 +101,60 @@ xunit.xml
 /test/assistant/data/cache/
 /test/assistant/data/results/
 /test/assistant/data/templates/
+
+# Claude Code session files
+.claude-session
+.claude/
+
+# Development and testing files (embeddings implementation)
+# Temporary documentation files
+ACTIVATION_*.md
+ANALYSE_*.md
+BILAN_*.md
+CORRECTION_*.md
+DECISION_*.md
+ETAT_*.md
+FINALISATION_*.md
+GUIDE_MIGRATION_*.md
+GUIDE_TEST_*.md
+IMPLEMENTATION_*.md
+INDEX_*.md
+INSTANCE_*.md
+PLAN_*.md
+RAPPORT_*.md
+RECAP_*.md
+RESUME_*.md
+
+# Test scripts and logs
+test_*.py
+test_*.sh
+test_*.log
+create_*.py
+enhance_*.py
+validate_*.py
+implement_*.py
+build_log*.txt
+docker_build*.log
+
+# Temporary shell scripts
+start-grist-*.bat
+start-grist-*.sh
+
+# Temporary Docker configurations
+Dockerfile.temp
+Dockerfile.extensions
+Dockerfile.quick
+Dockerfile.spatial
+
+# Null file (Windows artifact)
+nul
+
+# Specific temporary files to ignore
+RAPPORT_VALIDATION_EMBEDDING_FINAL.json
+RAPPORT_NETTOYAGE_VERSION_FONCTIONNELLE.md
+ANALYSE_NETTOYAGE_REPO.md
+implement_embedding_phase1.py
+Dockerfile.temp
+CLAUDE.md
+EMBEDDING_README.md
+GUIDE_UTILISATION_EMBEDDING_AUTOMATIQUE.md

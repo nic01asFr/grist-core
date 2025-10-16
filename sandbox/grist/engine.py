@@ -1287,6 +1287,8 @@ class Engine(object):
 
   def count_rows(self):
     result = {"total": 0}
+    if not hasattr(self.docmodel, 'tables'):
+      return result
     for table_rec in self.docmodel.tables.all:
       if useractions.is_user_table(table_rec.tableId):
         count = self.tables[table_rec.tableId]._num_rows()

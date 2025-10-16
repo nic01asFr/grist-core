@@ -1331,3 +1331,44 @@ def migration44(tdset):
   return tdset.apply_doc_actions([
     add_column('_grist_Pages', 'options', 'Text')
   ])
+
+@migration(schema_version=45)
+def migration45(tdset):
+  """
+  Add embedding system columns to all user tables.
+
+  Adds:
+  - grist_record_embedding (Text): Stores vector embedding as JSON
+  - grist_embedding_hash (Text): MD5 hash for change detection
+
+  Applied automatically when opening older documents to support
+  automatic embedding generation and semantic search features.
+  """
+  doc_actions = []
+
+  # Get all user tables
+  tables = list(actions.transpose_bulk_action(tdset.all_tables['_grist_Tables']))
+
+  for table in tables:
+    # Skip summary tables (they don't need embeddings)
+    if table.summarySourceTable:
+      continue
+
+    # Skip tables that don't exist in dataset
+    if table.tableId not in tdset.all_tables:
+      continue
+
+    # Add columns if they don't exist (maybe_add_column is idempotent)
+    maybe_embedding = maybe_add_column(
+      tdset, table.tableId, 'grist_record_embedding', 'Text'
+    )
+    maybe_hash = maybe_add_column(
+      tdset, table.tableId, 'grist_embedding_hash', 'Text'
+    )
+
+    if maybe_embedding:
+      doc_actions.append(maybe_embedding)
+    if maybe_hash:
+      doc_actions.append(maybe_hash)
+
+  return tdset.apply_doc_actions(doc_actions)

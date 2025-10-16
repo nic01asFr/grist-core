@@ -119,7 +119,8 @@ COPY --from=collector-py3 /usr/local/lib/libpython3.11.* /usr/local/lib/
 RUN \
   ln -sf /usr/bin/python3.11 /usr/bin/python && \
   ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-  ldconfig
+  ldconfig && \
+  python3 -m pip install --no-cache-dir requests numpy
 
 # Copy runsc.
 COPY --from=sandbox /runsc /usr/bin/runsc

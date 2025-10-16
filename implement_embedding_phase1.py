@@ -53,12 +53,6 @@ class AutoEmbeddingManager:
                 'model': 'text-embedding-ada-002',
                 'dimensions': 1536,
                 'token': None
-            },
-            'mock': {
-                'endpoint': None,
-                'model': 'mock-embedding',
-                'dimensions': 8,
-                'token': None
             }
         }
     
@@ -633,7 +627,7 @@ export function addEmbeddingEndpoints(app: express.Application, docManager: DocM
           total_embeddings: 0,
           pending_updates: 0,
           last_update: null,
-          services_available: ['albert', 'openai', 'mock']
+          services_available: ['albert', 'openai']
         };
         
         res.json({
