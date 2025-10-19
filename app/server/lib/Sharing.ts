@@ -185,6 +185,7 @@ export class Sharing {
               clientId: client?.clientId,
               retValues: sandboxActionBundle.retValues,
               internal,
+              summarize: true,  // Enable actionSummary generation for embedding detection
             })
           ).catch(err => {
             this._log.warn(docSession, 'Error queuing embeddings:', err);

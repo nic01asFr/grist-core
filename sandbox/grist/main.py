@@ -97,6 +97,11 @@ def run(sandbox):
     return eng.fetch_table_schema()
 
   @export
+  def get_table_list():
+    """Retourne la liste des noms de tables (user tables uniquement)"""
+    return [table_id for table_id in eng.tables.keys() if not table_id.startswith('_grist_')]
+
+  @export
   def autocomplete(txt, table_id, column_id, row_id, user):
     return eng.autocomplete(txt, table_id, column_id, row_id, user)
 
@@ -241,7 +246,7 @@ def run(sandbox):
   # ============================================================================
   # Importer et enregistrer les fonctions depuis usertypes.py
   try:
-    from usertypes import ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY
+    from usertypes import ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY, VECTOR_SEARCH
     
     # Enregistrer chaque fonction dans le sandbox
     sandbox.register('ST_DISTANCE', ST_DISTANCE)
@@ -249,8 +254,9 @@ def run(sandbox):
     sandbox.register('ST_CONTAINS', ST_CONTAINS)
     sandbox.register('ST_CENTROID', ST_CENTROID)
     sandbox.register('VECTOR_SIMILARITY', VECTOR_SIMILARITY)
-    
-    log.info("✅ Fonctions spatiales/vectorielles enregistrées: ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY")
+    sandbox.register('VECTOR_SEARCH', VECTOR_SEARCH)
+
+    log.info("✅ Fonctions spatiales/vectorielles enregistrées: ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY, VECTOR_SEARCH")
     
   except ImportError as e:
     log.warning("❌ Échec import fonctions spatiales/vectorielles: %s", e)

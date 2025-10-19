@@ -889,21 +889,21 @@ def ST_CENTROID(geometry: str) -> str:
 def VECTOR_SIMILARITY(vector1, vector2, method: str = 'cosine') -> float:
   """
   Calcule la similarité entre deux vecteurs.
-  
+
   Args:
       vector1, vector2: Vecteurs à comparer
       method: Méthode ('cosine', 'euclidean', 'dot') - défaut: cosine
-  
+
   Returns:
       Score de similarité (0-1 pour cosine)
-  
+
   Example:
       VECTOR_SIMILARITY($Embedding_A, $Embedding_B)
   """
   try:
       if not vector1 or not vector2 or len(vector1) != len(vector2):
           raise ValueError("Vecteurs doivent avoir la même dimension")
-      
+
       if method == 'cosine':
           return _cosine_similarity(vector1, vector2)
       elif method == 'euclidean':
@@ -912,9 +912,128 @@ def VECTOR_SIMILARITY(vector1, vector2, method: str = 'cosine') -> float:
           return sum(a * b for a, b in zip(vector1, vector2))
       else:
           raise ValueError(f"Méthode {method} non supportée")
-          
+
   except Exception as e:
       raise ValueError(f"VECTOR_SIMILARITY error: {e}")
+
+
+def VECTOR_SEARCH(table, query: str, threshold: float = 0.75, limit: int = 20, embedding_column: str = None):
+  """
+  Name: VECTOR_SEARCH
+  Usage: __VECTOR_SEARCH__(table, query, threshold=0.75, limit=20, embedding_column=None)
+
+  Recherche sémantique par similarité vectorielle dans une table.
+  Convertit automatiquement la requête texte en embedding et compare avec les enregistrements.
+  Retourne les résultats les plus pertinents selon la similarité cosinus.
+
+  Args:
+      table: Table dans laquelle effectuer la recherche (ex: Students, WebDAV_Files)
+      query: Texte de recherche ou référence de colonne (ex: "contrats RH" ou $description)
+      threshold: Seuil de similarité minimum (0.0 à 1.0, défaut: 0.75)
+                 0.7-0.8 = similaire, 0.8-0.9 = très similaire, 0.9+ = quasi-identique
+      limit: Nombre maximum de résultats à retourner (défaut: 20)
+      embedding_column: Nom de la colonne Vector à utiliser (optionnel)
+                       - Si None: utilise grist_record_embedding (auto-embedding de tous les champs)
+                       - Si spécifié: utilise une colonne Vector custom créée avec CREATE_VECTOR()
+
+  Returns:
+      list[int]: Liste d'IDs de records (compatible avec type Reference List)
+                 Liste vide [] si aucun résultat ou query vide
+
+  Examples:
+      ```
+      # Recherche basique avec auto-embedding (tous les champs texte)
+      VECTOR_SEARCH(WebDAV_Files, "contrats de travail")
+
+      # Recherche dans une colonne Vector custom (champs spécifiques)
+      VECTOR_SEARCH(WebDAV_Files, "rapport annuel", embedding_column="A")
+
+      # Recherche avec seuil strict pour résultats très pertinents
+      VECTOR_SEARCH(Documents, "factures 2024", threshold=0.85, limit=5)
+
+      # Utiliser le contenu d'une colonne comme requête
+      VECTOR_SEARCH(WebDAV_Files, $ai_summary, threshold=0.3, limit=3, embedding_column="A")
+
+      # Recherche sémantique large avec seuil bas
+      VECTOR_SEARCH(Knowledge_Base, $user_question, threshold=0.6, limit=10)
+
+      # Trouver documents similaires au document courant
+      VECTOR_SEARCH(Documents, $title + " " + $summary, threshold=0.8, limit=5)
+      ```
+
+  Workflow complet - Auto-embedding (par défaut):
+      1. Le système génère automatiquement grist_record_embedding pour chaque record
+      2. Tous les champs texte sont combinés pour créer l'embedding
+      3. VECTOR_SEARCH(Table, "query") recherche dans ces embeddings automatiques
+      4. Idéal pour recherche globale sans configuration
+
+  Workflow complet - Custom embeddings:
+      1. Créer colonne Vector (ex: colonne A de type "Vector")
+      2. Formule dans colonne A: CREATE_VECTOR($champ1, $champ2)
+      3. Créer colonne Reference List (ex: colonne B)
+      4. Formule dans colonne B: VECTOR_SEARCH(Table, $query, embedding_column="A")
+      5. Les résultats pointent vers les records les plus similaires
+
+  Cas d'usage:
+      - **Support client**: Trouver articles similaires à une question
+      - **Gestion documentaire**: Rechercher documents par contenu sémantique
+      - **Recommandations**: Suggérer contenus similaires
+      - **Déduplication**: Identifier doublons sémantiques (threshold élevé)
+      - **Classification**: Trouver catégorie par similarité d'exemples
+
+  Notes techniques:
+      - Similarité cosinus: mesure l'angle entre vecteurs (0=opposé, 1=identique)
+      - Embeddings: vecteurs de 1024 dimensions via API Albert (IA française)
+      - Query embedding: généré à la volée et mis en cache
+      - Performance: O(n) où n = nombre de records (parcours linéaire)
+      - Si query est vide/None, retourne liste vide []
+
+  Comparaison auto-embedding vs custom:
+      - Auto-embedding: Simple, aucune config, tous les champs, bon pour recherche globale
+      - Custom embedding: Contrôle précis, recherches ciblées, meilleurs résultats
+  """
+  try:
+      from embedding_manager import VECTOR_SEARCH_SYSTEM
+
+      # Déterminer table_id
+      table_id = None
+
+      # Extraire table_id depuis l'objet table
+      if hasattr(table, 'table') and hasattr(table.table, 'table_id'):
+          table_id = table.table.table_id
+      else:
+          raise ValueError("Premier paramètre doit être une table (ex: WebDAV_Files)")
+
+      # Vérifier que query n'est pas vide
+      if not query or query is None:
+          return []  # Retourner liste vide si pas de requête
+
+      # Utiliser la colonne spécifiée ou la colonne par défaut
+      if embedding_column is None:
+          embedding_column = 'grist_record_embedding'
+          log.info(f"VECTOR_SEARCH: table {table_id}, colonne par défaut {embedding_column}")
+      else:
+          log.info(f"VECTOR_SEARCH: table {table_id}, colonne custom {embedding_column}")
+
+      # Appeler la fonction système avec la colonne spécifiée
+      results = VECTOR_SEARCH_SYSTEM(
+          table_id,
+          query,
+          limit=int(limit),
+          threshold=float(threshold),
+          embedding_column=embedding_column
+      )
+
+      # Retourner la liste des row_ids
+      if results:
+          return [int(r['row_id']) for r in results]
+      else:
+          return []
+
+  except Exception as e:
+      import traceback
+      log.error(f"VECTOR_SEARCH error: {e}\n{traceback.format_exc()}")
+      return []
 
 
 # ============================================================================
@@ -1026,3 +1145,94 @@ def _cosine_similarity(vecA, vecB) -> float:
 def _euclidean_distance_vectors(vecA, vecB) -> float:
   """Distance euclidienne entre deux vecteurs."""
   return math.sqrt(sum((a - b) ** 2 for a, b in zip(vecA, vecB)))
+
+
+# ============================================================================
+# CUSTOM EMBEDDINGS - CREATE_VECTOR()
+# ============================================================================
+
+def CREATE_VECTOR(*field_values):
+  """
+  Name: CREATE_VECTOR
+  Usage: __CREATE_VECTOR__(*field_values)
+
+  Génère un embedding vectoriel personnalisé à partir de champs sélectionnés.
+  Contrairement à l'auto-embedding (qui utilise tous les champs texte), cette fonction
+  permet de créer des embeddings ciblés pour des recherches sémantiques spécifiques.
+
+  Args:
+      *field_values: Valeurs des champs à combiner pour l'embedding
+                     Accepte n'importe quel nombre de colonnes (ex: $col1, $col2, ...)
+                     Les valeurs vides/None sont ignorées automatiquement
+
+  Returns:
+      list[float]: Vecteur embedding de 1024 dimensions (API Albert)
+      None: Si aucun contenu valide ou génération en cours
+
+  Examples:
+      ```
+      # Créer une colonne Vector pour rechercher par titre + résumé
+      CREATE_VECTOR($file_name, $ai_summary)
+
+      # Embedding basé uniquement sur le contenu extrait
+      CREATE_VECTOR($extracted_content)
+
+      # Embedding sur métadonnées (tags + catégorie + auteur)
+      CREATE_VECTOR($ai_tags, $ai_category, $author)
+
+      # Combinaison de plusieurs champs texte
+      CREATE_VECTOR($title, $description, $keywords, $notes)
+      ```
+
+  Workflow d'utilisation:
+      1. Créer une colonne de type "Vector" (ex: colonne A)
+      2. Ajouter la formule CREATE_VECTOR($champ1, $champ2, ...)
+      3. Les embeddings sont générés automatiquement (asynchrone)
+      4. Utiliser avec VECTOR_SEARCH(..., embedding_column="A")
+
+  Notes techniques:
+      - Génération asynchrone via queue (non-bloquant, retry automatique)
+      - Cache avec hash MD5 du contenu pour éviter régénération
+      - Utilise l'API Albert (IA française) pour les embeddings
+      - Compatible avec le type de colonne "Vector" de Grist
+      - Les valeurs sont persistées automatiquement dans la colonne
+
+  Cas d'usage:
+      - Documents: Recherche par contenu ou métadonnées séparément
+      - Produits: Recherche par nom vs recherche par description technique
+      - Support: Recherche par question vs recherche par réponse
+      - Multi-langues: Embeddings séparés par langue
+  """
+  from embedding_manager import _get_embedding_manager
+  import hashlib
+
+  # Concaténer les valeurs non-vides
+  text_parts = []
+  for value in field_values:
+    if value is not None and value != '':
+      text_parts.append(str(value))
+
+  # Pas de contenu → pas d'embedding
+  if not text_parts:
+    return None
+
+  combined_text = ' '.join(text_parts)
+
+  # Calculer hash du contenu pour cache
+  content_hash = hashlib.md5(combined_text.encode('utf-8')).hexdigest()
+
+  # Essayer de récupérer depuis le cache mémoire du manager
+  manager = _get_embedding_manager()
+  if manager:
+    try:
+      # Générer l'embedding via le manager (qui gère le cache)
+      embedding = manager.generate_embedding(combined_text, 'albert')
+
+      if embedding:
+        return embedding  # [1024 floats]
+    except Exception as e:
+      log.debug(f"CREATE_VECTOR: Génération embedding: {e}")
+
+  # Pas encore généré ou erreur → retourner None
+  # La formule sera recalculée automatiquement quand disponible
+  return None

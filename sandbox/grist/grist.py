@@ -8,7 +8,7 @@ a consistent API accessible with only "import grist".
 from usertypes import Any, Text, Blob, Int, Bool, Date, DateTime, \
   Numeric, Choice, ChoiceList, Id, Attachments, AltText, ifError, Geometry, Vector
 from usertypes import PositionNumber, ManualSortPos, Reference, ReferenceList, formulaType
-from usertypes import ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY
+from usertypes import ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY, VECTOR_SEARCH, CREATE_VECTOR
 from table import UserTable
 from records import Record, RecordSet
 from column import SafeSortKey
@@ -19,9 +19,10 @@ __all__ = [
     'Numeric', 'Choice', 'ChoiceList', 'Id', 'Attachments', 'AltText', 'ifError',
     'Geometry', 'Vector',
     'PositionNumber', 'ManualSortPos', 'Reference', 'ReferenceList', 'formulaType',
-    'ST_DISTANCE', 'ST_AREA', 'ST_CONTAINS', 'ST_CENTROID', 'VECTOR_SIMILARITY',
+    'ST_DISTANCE', 'ST_AREA', 'ST_CONTAINS', 'ST_CENTROID', 'VECTOR_SIMILARITY', 'VECTOR_SEARCH', 'CREATE_VECTOR',
     'UserTable', 'Record', 'RecordSet', 'SafeSortKey'
 ]
 
 DOCS = [(__name__, (Record, RecordSet, UserTable)),
-        ('lookup', (UserTable.lookupOne, UserTable.lookupRecords))]
+        ('lookup', (UserTable.lookupOne, UserTable.lookupRecords)),
+        ('spatial_vector', (ST_DISTANCE, ST_AREA, ST_CONTAINS, ST_CENTROID, VECTOR_SIMILARITY, VECTOR_SEARCH, CREATE_VECTOR))]

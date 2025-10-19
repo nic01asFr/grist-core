@@ -67,6 +67,13 @@ export class EmbeddingManager {
     }
     this._scheduleLoop();
     this._log('EmbeddingManager worker started');
+
+    // Initialiser les colonnes système pour toutes les tables au démarrage
+    setImmediate(() => {
+      this._initializeAllTables().catch(err => {
+        this._log(`Error initializing tables: ${err}`, 'error');
+      });
+    });
   }
 
   /**
@@ -96,8 +103,12 @@ export class EmbeddingManager {
    */
   public async detectAndQueueEmbeddings(actionGroup: ActionGroup): Promise<void> {
     try {
+      this._log(`[DEBUG] detectAndQueueEmbeddings called`);
+
       // Analyser les actions pour détecter les modifications de données
       const requests = await this._analyzeActions(actionGroup);
+
+      this._log(`[DEBUG] _analyzeActions returned ${requests.length} requests`);
 
       if (requests.length > 0) {
         this._enqueueRequests(requests);
@@ -140,21 +151,33 @@ export class EmbeddingManager {
     // Utiliser ActionSummary pour identifier les changements
     const summary = actionGroup.actionSummary;
     if (!summary || !summary.tableDeltas) {
+      this._log(`[DEBUG] No summary or tableDeltas in actionGroup`);
       return requests;
     }
 
+    this._log(`[DEBUG] Analyzing ${Object.keys(summary.tableDeltas).length} table(s)`);
+
     // Parcourir chaque table modifiée
     for (const [tableId, tableDelta] of Object.entries(summary.tableDeltas)) {
+      this._log(`[DEBUG] Checking table ${tableId}: addRows=${tableDelta.addRows.length}, updateRows=${tableDelta.updateRows.length}`);
+
       // Ignorer les tables système
       if (tableId.startsWith('_grist_')) {
+        this._log(`[DEBUG] Skipping system table ${tableId}`);
         continue;
       }
 
       // Vérifier si la table a l'embedding activé
       const config = await this._getTableEmbeddingConfig(tableId);
+      this._log(`[DEBUG] Config for ${tableId}: enabled=${config?.enabled}, autoGenerate=${config?.autoGenerate}`);
+
       if (!config || !config.enabled || !config.autoGenerate) {
+        this._log(`[DEBUG] Embedding disabled for ${tableId}`);
         continue;
       }
+
+      // Vérifier et créer les colonnes système si nécessaire
+      await this._ensureEmbeddingColumns(tableId);
 
       // Collecter tous les rowIds affectés (ajoutés ou modifiés)
       const affectedRows = new Set<number>();
@@ -241,7 +264,7 @@ export class EmbeddingManager {
   ): Promise<string | null> {
     try {
       // Récupérer les données via pyCall
-      const tableData = await (this._activeDoc as any).pyCall('fetch_table', tableId, true);
+      const tableData = await (this._activeDoc as any)._rawPyCall('fetch_table', tableId, true);
 
       // Trouver l'index du rowId
       const rowIndex = tableData[2].indexOf(rowId);
@@ -275,7 +298,7 @@ export class EmbeddingManager {
    */
   private async _detectTextColumns(tableId: string): Promise<string[]> {
     try {
-      const metaTables = await (this._activeDoc as any).pyCall('fetch_meta_tables', false);
+      const metaTables = await (this._activeDoc as any)._rawPyCall('fetch_meta_tables', false);
       const columnsTable = metaTables._grist_Tables_column;
 
       const textColumns: string[] = [];
@@ -289,7 +312,15 @@ export class EmbeddingManager {
         // Vérifier si c'est une colonne de notre table
         // (nécessite de mapper tableId → table numeric ID, simplifié ici)
         if (type === 'Text' || type === 'Any' || type === 'Choice') {
-          if (!isFormula && !colId.startsWith('_grist_') && colId !== 'manualSort') {
+          // Exclure :
+          // - Les formules (isFormula)
+          // - Les colonnes système (_grist_*)
+          // - manualSort
+          // - Les colonnes d'embedding système (grist_record_embedding, grist_embedding_hash)
+          if (!isFormula &&
+              !colId.startsWith('_grist_') &&
+              !colId.startsWith('grist_') &&  // Exclure grist_record_embedding, grist_embedding_hash
+              colId !== 'manualSort') {
             textColumns.push(colId);
           }
         }
@@ -307,7 +338,7 @@ export class EmbeddingManager {
    */
   private async _getCurrentHash(tableId: string, rowId: number): Promise<string | null> {
     try {
-      const tableData = await (this._activeDoc as any).pyCall('fetch_table', tableId, false);
+      const tableData = await (this._activeDoc as any)._rawPyCall('fetch_table', tableId, false);
       const rowIndex = tableData[2].indexOf(rowId);
       if (rowIndex === -1) {
         return null;
@@ -317,6 +348,81 @@ export class EmbeddingManager {
       return hashValues ? hashValues[rowIndex] : null;
     } catch (err) {
       return null;
+    }
+  }
+
+  /**
+   * Initialiser toutes les tables au démarrage (créer colonnes système si nécessaire)
+   */
+  private async _initializeAllTables(): Promise<void> {
+    try {
+      this._log('[INIT] Initializing embedding columns for all tables...');
+
+      // Récupérer la liste de toutes les tables
+      const tables = await (this._activeDoc as any)._rawPyCall('get_table_list');
+      this._log(`[INIT] Found ${tables.length} tables to check`);
+
+      for (const tableId of tables) {
+        // Ignorer les tables système
+        if (tableId.startsWith('_grist_')) {
+          continue;
+        }
+
+        // Vérifier et créer les colonnes si nécessaire
+        await this._ensureEmbeddingColumns(tableId);
+      }
+
+      this._log('[INIT] Table initialization complete');
+    } catch (err) {
+      this._log(`[INIT] Error during table initialization: ${err}`, 'error');
+    }
+  }
+
+  /**
+   * S'assurer que les colonnes système d'embedding existent dans la table
+   */
+  private async _ensureEmbeddingColumns(tableId: string): Promise<void> {
+    try {
+      // Récupérer les colonnes existantes
+      const tableData = await (this._activeDoc as any)._rawPyCall('fetch_table', tableId, false);
+      const existingColumns = Object.keys(tableData[3]);
+
+      const columnsToAdd: Array<[string, any]> = [];
+
+      // Vérifier grist_record_embedding
+      if (!existingColumns.includes('grist_record_embedding')) {
+        this._log(`[DEBUG] Table ${tableId} missing grist_record_embedding column, will create it`);
+        columnsToAdd.push(['grist_record_embedding', {
+          type: 'Vector',
+          isFormula: false
+        }]);
+      }
+
+      // Vérifier grist_embedding_hash
+      if (!existingColumns.includes('grist_embedding_hash')) {
+        this._log(`[DEBUG] Table ${tableId} missing grist_embedding_hash column, will create it`);
+        columnsToAdd.push(['grist_embedding_hash', {
+          type: 'Text',
+          isFormula: false
+        }]);
+      }
+
+      // Créer les colonnes manquantes
+      if (columnsToAdd.length > 0) {
+        this._log(`Creating ${columnsToAdd.length} system column(s) for table ${tableId}`);
+        const docSession = makeExceptionalDocSession('system');
+
+        for (const [colId, colInfo] of columnsToAdd) {
+          await this._activeDoc.applyUserActions(docSession, [
+            ['AddColumn', tableId, colId, colInfo]
+          ]);
+        }
+
+        this._log(`Successfully created system columns for table ${tableId}`);
+      }
+    } catch (err) {
+      this._log(`Error ensuring embedding columns for ${tableId}: ${err}`, 'error');
+      // Ne pas bloquer si la création échoue
     }
   }
 

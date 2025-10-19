@@ -650,9 +650,17 @@ def AUTO_EMBEDDING(table_id: str, row_id: int, service: str = 'albert') -> Optio
         log.error(f"Erreur AUTO_EMBEDDING: {e}", exc_info=True)
         return None
 
-def VECTOR_SEARCH_SYSTEM(table_id: str, query: str, limit: int = 10, threshold: float = 0.7) -> List[Dict]:
+def VECTOR_SEARCH_SYSTEM(table_id: str, query: str, limit: int = 10, threshold: float = 0.7, embedding_column: str = 'grist_record_embedding') -> List[Dict]:
     """
     Fonction exposée pour recherche vectorielle système avec API réelle
+
+    Args:
+        table_id: ID de la table dans laquelle chercher
+        query: Texte de la requête de recherche
+        limit: Nombre max de résultats
+        threshold: Seuil de similarité minimum
+        embedding_column: Nom de la colonne Vector contenant les embeddings
+                         (défaut: 'grist_record_embedding' pour auto-embedding)
     """
     try:
         import docmodel
@@ -686,15 +694,15 @@ def VECTOR_SEARCH_SYSTEM(table_id: str, query: str, limit: int = 10, threshold: 
 
             # Récupérer tous les records de la table
             all_records = user_table.all
-            log.info(f"Recherche dans {len(all_records)} records de la table {table_id}")
+            log.info(f"Recherche dans {len(all_records)} records de la table {table_id} (colonne: {embedding_column})")
 
             results = []
             import json
 
             for record in all_records:
                 try:
-                    # Lire UNIQUEMENT l'embedding stocké (pas de génération à la volée)
-                    stored_embedding = getattr(record, 'grist_record_embedding', None)
+                    # Lire l'embedding de la colonne spécifiée
+                    stored_embedding = getattr(record, embedding_column, None)
 
                     if not stored_embedding:
                         # Pas d'embedding stocké, ignorer ce record
@@ -724,26 +732,12 @@ def VECTOR_SEARCH_SYSTEM(table_id: str, query: str, limit: int = 10, threshold: 
 
                         # Vérifier seuil
                         if similarity >= threshold:
-                            # Récupérer preview du contenu de manière générique
-                            preview_parts = []
-                            for attr_name in dir(record):
-                                if (not attr_name.startswith('_') and
-                                    attr_name not in ['id', 'manualSort']):
-                                    try:
-                                        value = getattr(record, attr_name, None)
-                                        if value and isinstance(value, (str, int, float)):
-                                            preview_parts.append(str(value))
-                                            if len(preview_parts) >= 3:
-                                                break
-                                    except:
-                                        continue
-
-                            preview_text = ' | '.join(preview_parts)
-
+                            # Pas de preview pour éviter circular ref
+                            # Le preview serait utile mais cause des problèmes avec les formules
                             results.append({
                                 'row_id': record.id,
                                 'score': float(similarity),
-                                'preview': preview_text[:200]
+                                'preview': f"Record #{record.id}"
                             })
                     except Exception as sim_error:
                         log.warning(f"Erreur calcul similarité pour record {record.id}: {sim_error}")
