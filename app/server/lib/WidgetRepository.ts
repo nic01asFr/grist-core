@@ -151,7 +151,6 @@ export class UrlWidgetRepository implements IWidgetRepository {
 export class WidgetRepositoryImpl implements IWidgetRepository {
   protected _staticUrl: string|undefined;
   private _diskWidgets?: IWidgetRepository;
-  private _urlWidgets: UrlWidgetRepository;
   private _combinedWidgets: CombinedWidgetRepository;
 
   constructor(_options: {
@@ -188,9 +187,12 @@ export class WidgetRepositoryImpl implements IWidgetRepository {
     this._staticUrl = overrideUrl ?? Deps.STATIC_URL;
     if (this._staticUrl) {
       const optional = isAffirmative(process.env.GRIST_WIDGET_LIST_URL_OPTIONAL);
-      this._urlWidgets = new UrlWidgetRepository(this._staticUrl,
-                                                 !optional);
-      repos.push(this._urlWidgets);
+      // Support multiple URLs separated by comma
+      const urls = this._staticUrl.split(',').map(u => u.trim()).filter(u => u);
+      for (const url of urls) {
+        const urlRepo = new UrlWidgetRepository(url, !optional);
+        repos.push(urlRepo);
+      }
     }
     if (this._diskWidgets) { repos.push(this._diskWidgets); }
     this._combinedWidgets = new CombinedWidgetRepository(repos);
