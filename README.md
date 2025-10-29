@@ -3,6 +3,7 @@
 This enhanced version of Grist extends the powerful spreadsheet-database hybrid with **semantic search capabilities** and **AI-powered embeddings**, opening new possibilities for intelligent data management and retrieval.
 
 ## 🚀 What's New
+![57f35f5c-d103-4c91-97e2-e8cee551d292.png](https://docs.numerique.gouv.fr/media/dadb8a80-96e7-468b-ba86-c6ae1ec0a94a/attachments/57f35f5c-d103-4c91-97e2-e8cee551d292.png)
 
 ### Semantic Vector Search
 Search your data by **meaning**, not just keywords. Find similar documents, detect duplicates, recommend content, and discover connections that traditional searches would miss.
