@@ -3,7 +3,7 @@ import { fromCallback } from 'app/server/lib/serverUtils';
 import { Backup, MinDB, MinDBOptions, PreparedStatement,
          ResultRow, SqliteVariant } from 'app/server/lib/SqliteCommon';
 import { OpenMode, RunResult } from 'app/server/lib/SQLiteDB';
-import * as log from 'app/server/lib/log';
+import log from 'app/server/lib/log';
 
 export class NodeSqliteVariant implements SqliteVariant {
   public opener(dbPath: string, mode: OpenMode): Promise<MinDB> {
