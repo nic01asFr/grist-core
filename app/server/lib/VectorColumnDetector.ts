@@ -16,8 +16,8 @@
  * - Common naming patterns: *embedding*, *vector*, *emb*
  */
 
-import * as log from 'app/server/lib/log';
-import {MinDB, ResultRow} from 'app/server/lib/SqliteCommon';
+import log from 'app/server/lib/log';
+import {MinDB} from 'app/server/lib/SqliteCommon';
 
 /**
  * Metadata about a detected vector column
