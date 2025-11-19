@@ -63,9 +63,11 @@ COPY sandbox/requirements.txt requirements.txt
 # setuptools is installed explicitly to 75.8.1 to avoid vunerable 65.5.1
 # version installed by default. 75.8.1 is the up to date version compatible with
 # python >= 3.9
+# sqlite-vec is installed for vector search optimization
 RUN \
   pip3 install setuptools==75.8.1 && \
-  pip3 install -r requirements.txt
+  pip3 install -r requirements.txt && \
+  pip3 install sqlite-vec==0.1.6
 
 ################################################################################
 ## Sandbox collection stage
