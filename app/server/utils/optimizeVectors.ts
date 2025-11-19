@@ -49,7 +49,7 @@ class CLIStorageManager implements IDocStorageManager {
     return Promise.resolve(false);
   }
 
-  public prepareToCloseStorage(docName: string): void {
+  public prepareToCloseStorage(): void {
     // No-op for CLI
   }
 
