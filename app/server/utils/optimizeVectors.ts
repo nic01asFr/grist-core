@@ -9,7 +9,6 @@
 
 import {DocStorage} from 'app/server/lib/DocStorage';
 import {IDocStorageManager} from 'app/server/lib/IDocStorageManager';
-import log from 'app/server/lib/log';
 import {VectorOptimizer} from 'app/server/lib/VectorOptimizer';
 import * as path from 'path';
 
@@ -33,7 +32,7 @@ class CLIStorageManager implements IDocStorageManager {
     return Promise.resolve();
   }
 
-  public closeStorage(docName: string): Promise<void> {
+  public closeStorage(): Promise<void> {
     return Promise.resolve();
   }
 
@@ -45,8 +44,8 @@ class CLIStorageManager implements IDocStorageManager {
     // No-op for CLI
   }
 
-  public addToStorage(docName: string): Promise<boolean> {
-    return Promise.resolve(false);
+  public addToStorage(docName: string): Promise<void> {
+    return Promise.resolve();
   }
 
   public prepareToCloseStorage(): void {
