@@ -20,8 +20,8 @@ export async function optimizeVectors(docPath: string, options: {
   batchSize?: number;
 }): Promise<void> {
   // Use TrivialDocStorageManager - a minimal implementation that works for CLI
-  const storageManager = new TrivialDocStorageManager(path.dirname(docPath));
-  const docStorage = new DocStorage(storageManager, path.basename(docPath));
+  const storageManager = new TrivialDocStorageManager();
+  const docStorage = new DocStorage(storageManager, docPath);
 
   try {
     // Open the document
@@ -100,8 +100,8 @@ export async function optimizeVectors(docPath: string, options: {
  * Show optimization status for a document
  */
 export async function showVectorStatus(docPath: string): Promise<void> {
-  const storageManager = new TrivialDocStorageManager(path.dirname(docPath));
-  const docStorage = new DocStorage(storageManager, path.basename(docPath));
+  const storageManager = new TrivialDocStorageManager();
+  const docStorage = new DocStorage(storageManager, docPath);
 
   try {
     console.log(`📂 Opening document: ${docPath}`);
@@ -157,8 +157,8 @@ export async function showVectorStatus(docPath: string): Promise<void> {
  * Rollback vec0 optimizations from a document
  */
 export async function rollbackVectorOptimization(docPath: string): Promise<void> {
-  const storageManager = new TrivialDocStorageManager(path.dirname(docPath));
-  const docStorage = new DocStorage(storageManager, path.basename(docPath));
+  const storageManager = new TrivialDocStorageManager();
+  const docStorage = new DocStorage(storageManager, docPath);
 
   try {
     console.log(`📂 Opening document: ${docPath}`);
