@@ -8,58 +8,9 @@
  */
 
 import {DocStorage} from 'app/server/lib/DocStorage';
-import {IDocStorageManager} from 'app/server/lib/IDocStorageManager';
+import {TrivialDocStorageManager} from 'app/server/lib/IDocStorageManager';
 import {VectorOptimizer} from 'app/server/lib/VectorOptimizer';
 import * as path from 'path';
-
-/**
- * Dummy storage manager for CLI usage
- */
-class CLIStorageManager implements IDocStorageManager {
-  public getPath(docName: string): string {
-    return docName;  // For CLI, docName is already the full path
-  }
-
-  public getCanonicalDocName(docName: string): Promise<string> {
-    return Promise.resolve(path.basename(docName, '.grist'));
-  }
-
-  public getCopy(docName: string): Promise<string> {
-    throw new Error('getCopy not implemented in CLI mode');
-  }
-
-  public flushDoc(docName: string): Promise<void> {
-    return Promise.resolve();
-  }
-
-  public closeStorage(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  public closeDocument(docName: string): Promise<void> {
-    return Promise.resolve();
-  }
-
-  public testReopenStorage(): void {
-    // No-op for CLI
-  }
-
-  public addToStorage(docName: string): Promise<void> {
-    return Promise.resolve();
-  }
-
-  public prepareToCloseStorage(): void {
-    // No-op for CLI
-  }
-
-  public prepareLocalDoc(docName: string): Promise<boolean> {
-    return Promise.resolve(true);
-  }
-
-  public storageUsage(docName: string): Promise<number> {
-    return Promise.resolve(0);
-  }
-}
 
 /**
  * Optimize vectors in a Grist document
@@ -68,8 +19,9 @@ export async function optimizeVectors(docPath: string, options: {
   dryRun?: boolean;
   batchSize?: number;
 }): Promise<void> {
-  const storageManager = new CLIStorageManager();
-  const docStorage = new DocStorage(storageManager, docPath);
+  // Use TrivialDocStorageManager - a minimal implementation that works for CLI
+  const storageManager = new TrivialDocStorageManager(path.dirname(docPath));
+  const docStorage = new DocStorage(storageManager, path.basename(docPath));
 
   try {
     // Open the document
@@ -148,8 +100,8 @@ export async function optimizeVectors(docPath: string, options: {
  * Show optimization status for a document
  */
 export async function showVectorStatus(docPath: string): Promise<void> {
-  const storageManager = new CLIStorageManager();
-  const docStorage = new DocStorage(storageManager, docPath);
+  const storageManager = new TrivialDocStorageManager(path.dirname(docPath));
+  const docStorage = new DocStorage(storageManager, path.basename(docPath));
 
   try {
     console.log(`📂 Opening document: ${docPath}`);
@@ -205,8 +157,8 @@ export async function showVectorStatus(docPath: string): Promise<void> {
  * Rollback vec0 optimizations from a document
  */
 export async function rollbackVectorOptimization(docPath: string): Promise<void> {
-  const storageManager = new CLIStorageManager();
-  const docStorage = new DocStorage(storageManager, docPath);
+  const storageManager = new TrivialDocStorageManager(path.dirname(docPath));
+  const docStorage = new DocStorage(storageManager, path.basename(docPath));
 
   try {
     console.log(`📂 Opening document: ${docPath}`);
