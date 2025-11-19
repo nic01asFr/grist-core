@@ -8,6 +8,7 @@ import { getMigrations, getOrCreateConnection, getTypeORMSettings,
 import { getDatabaseUrl } from 'app/server/lib/serverUtils';
 import { getTelemetryPrefs } from 'app/server/lib/Telemetry';
 import { Gristifier } from 'app/server/utils/gristify';
+import { optimizeVectors, rollbackVectorOptimization, showVectorStatus } from 'app/server/utils/optimizeVectors';
 import { pruneActionHistory } from 'app/server/utils/pruneActionHistory';
 import { showAuditLogEvents } from 'app/server/utils/showAuditLogEvents';
 import * as commander from 'commander';
@@ -49,6 +50,7 @@ export function getProgram(): commander.Command {
   addSettingsCommand(program, {nested: true});
   addSiteCommand(program, {nested: true});
   addSqliteCommand(program);
+  addVectorCommand(program);
   addVersionCommand(program);
   return program;
 }
@@ -267,6 +269,25 @@ export function addSqliteCommand(program: commander.Command) {
     .description('read data from a sqlite file that may contain Grist marshaling')
     .option('--json', 'output as JSON')
     .action((filename, query, options) => new Gristifier(filename).query(query, options));
+}
+
+export function addVectorCommand(program: commander.Command) {
+  const sub = program.command('vector')
+    .description('optimize vector search performance using sqlite-vec');
+
+  sub.command('optimize <grist-file>')
+    .description('migrate JSON vectors to optimized vec0 virtual tables (10-50× speedup)')
+    .option('--dry-run', 'simulate migration without making changes')
+    .option('--batch-size <size>', 'number of rows to migrate per batch (default: 1000)', parseIntForCommander, 1000)
+    .action(optimizeVectors);
+
+  sub.command('status <grist-file>')
+    .description('show vector optimization status for a document')
+    .action(showVectorStatus);
+
+  sub.command('rollback <grist-file>')
+    .description('remove vec0 tables and revert to JSON-based search')
+    .action(rollbackVectorOptimization);
 }
 
 export function addVersionCommand(program: commander.Command) {
