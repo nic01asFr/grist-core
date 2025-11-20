@@ -15,12 +15,14 @@ log = logging.getLogger(__name__)
 
 class AutoEmbeddingManager:
     """Gestionnaire principal pour les fonctionnalités d'auto-embedding"""
-    
+
     def __init__(self, engine):
         self._engine = engine
         self._embedding_configs = {}  # Cache des configurations par table
         self._pending_embeddings = []  # Queue des embeddings à traiter
-        
+        self._query_embedding_cache = {}  # Cache des embeddings de requêtes (query text -> embedding)
+        self._cache_max_size = 100  # Limite du cache pour éviter surconsommation mémoire
+
         # Configuration services d'embedding avec variables d'environnement
         albert_token = os.getenv('ALBERT_API_TOKEN')
         if not albert_token:
@@ -225,24 +227,56 @@ class AutoEmbeddingManager:
             log.error(f"Erreur vérification champs système {table_id}: {e}")
             return False
 
-    def generate_embedding(self, text: str, service: str = 'albert') -> Optional[List[float]]:
+    def generate_embedding(self, text: str, service: str = 'albert', use_cache: bool = False) -> Optional[List[float]]:
         """
         Générer un embedding réel via API externe
+
+        Args:
+            text: Texte à transformer en embedding
+            service: Service d'embedding à utiliser ('albert', 'openai')
+            use_cache: Si True, utilise le cache pour éviter de régénérer les embeddings identiques
+                      (utile pour les requêtes de recherche répétées)
+
+        Returns:
+            Liste de floats représentant l'embedding, ou None en cas d'erreur
         """
         try:
+            # Si cache activé, vérifier si l'embedding existe déjà
+            if use_cache:
+                cache_key = f"{service}:{text}"
+                if cache_key in self._query_embedding_cache:
+                    log.debug(f"✅ Cache hit pour requête: '{text[:50]}...'")
+                    return self._query_embedding_cache[cache_key]
+
             service_config = self._services.get(service)
             if not service_config:
                 log.error(f"Service embedding '{service}' non configuré")
                 return None
-            
+
+            # Générer l'embedding via API
             if service == 'albert':
-                return self._generate_albert_embedding(text, service_config)
+                embedding = self._generate_albert_embedding(text, service_config)
             elif service == 'openai':
-                return self._generate_openai_embedding(text, service_config)
+                embedding = self._generate_openai_embedding(text, service_config)
             else:
                 log.error(f"Service embedding '{service}' non supporté")
                 return None
-                
+
+            # Si cache activé et embedding généré avec succès, le stocker
+            if use_cache and embedding:
+                cache_key = f"{service}:{text}"
+                # Limiter la taille du cache (FIFO simple)
+                if len(self._query_embedding_cache) >= self._cache_max_size:
+                    # Supprimer la première entrée (plus ancienne)
+                    first_key = next(iter(self._query_embedding_cache))
+                    del self._query_embedding_cache[first_key]
+                    log.debug(f"Cache plein, suppression de l'entrée la plus ancienne")
+
+                self._query_embedding_cache[cache_key] = embedding
+                log.debug(f"✅ Embedding mis en cache: '{text[:50]}...' (cache: {len(self._query_embedding_cache)}/{self._cache_max_size})")
+
+            return embedding
+
         except Exception as e:
             log.error(f"Erreur génération embedding: {e}")
             return None
@@ -449,10 +483,11 @@ def should_include_in_embedding(col_id: str, col) -> bool:
     """
     Détermine si une colonne doit être incluse automatiquement dans l'embedding
 
-    Règles:
+    Règles (mise à jour Phase 1.5):
     - Exclure colonnes système (_grist_*)
     - Exclure id, manualSort
-    - Exclure colonnes formules
+    - Exclure colonnes vectorielles (pour éviter boucle de reload constant)
+    - INCLURE colonnes formules (nouveau) pour permettre embedding de résultats calculés
     - Inclure uniquement types textuels
     """
     # Exclure colonnes système
@@ -463,13 +498,6 @@ def should_include_in_embedding(col_id: str, col) -> bool:
     if col_id in ['id', 'manualSort']:
         return False
 
-    # Exclure formules (on ne veut que les données saisies)
-    try:
-        if hasattr(col, 'is_formula') and col.is_formula():
-            return False
-    except:
-        pass
-
     # Vérifier le type de colonne
     try:
         # Récupérer le type de la colonne
@@ -479,11 +507,25 @@ def should_include_in_embedding(col_id: str, col) -> bool:
         elif hasattr(col, 'type'):
             type_name = str(col.type)
 
-        # Types textuels acceptés
-        text_types = ['Text', 'Any', 'Choice', 'ChoiceList']
+        # EXCLURE les colonnes vectorielles pour éviter boucle de reload
+        # Les colonnes Vector/Numeric contenant des embeddings ne doivent pas être ré-embeddées
+        vector_indicators = [
+            'embedding', 'vector', 'vec_', 'grist_record_embedding',
+            'grist_embedding_hash', 'grist_embedding_status'
+        ]
+        col_id_lower = col_id.lower()
+        if any(indicator in col_id_lower for indicator in vector_indicators):
+            return False
+
+        # Exclure le type Any qui pourrait contenir des vecteurs
+        # mais ACCEPTER les types textuels même pour formules
+        text_types = ['Text', 'Choice', 'ChoiceList']
 
         if type_name and type_name in text_types:
+            # Colonnes textuelles acceptées, qu'elles soient formules ou non
+            # Les formules peuvent contenir des résultats intéressants à embedder
             return True
+
     except Exception as e:
         log.debug(f"Erreur vérification type colonne {col_id}: {e}")
 
@@ -690,8 +732,9 @@ def VECTOR_SEARCH_SYSTEM(table_id: str, query: str, limit: int = 10, threshold: 
             log.error("Gestionnaire d'embedding non disponible pour recherche")
             return []
 
-        # Générer embedding pour la requête de recherche
-        query_embedding = manager.generate_embedding(query, 'albert')
+        # Générer embedding pour la requête de recherche avec cache activé
+        # Ceci évite de régénérer l'embedding pour des requêtes répétées
+        query_embedding = manager.generate_embedding(query, service='albert', use_cache=True)
 
         if not query_embedding:
             log.error("Impossible de générer embedding pour la requête")
