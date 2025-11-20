@@ -725,7 +725,7 @@ export class DocStorage implements ISQLiteDB, OnDemandStorage {
     // TODO: Switch setting to FULL, but don't wait for SQLite transactions to finish before
     // returning responses to the user. Instead send error messages on unexpected errors.
     const settings = [
-      'PRAGMA trusted_schema = OFF;',  // mitigation suggested by https://www.sqlite.org/security.html#untrusted_sqlite_database_files
+      'PRAGMA trusted_schema = ON;',  // Required for vec0 virtual tables in triggers. Changed from OFF to support sqlite-vec optimization.
     ];
     const sqliteMode = getSqliteMode();
     if (sqliteMode === undefined) {

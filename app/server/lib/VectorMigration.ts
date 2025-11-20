@@ -23,6 +23,7 @@
 import log from 'app/server/lib/log';
 import {MinDB} from 'app/server/lib/SqliteCommon';
 import {VectorColumnDetector, VectorColumnInfo} from 'app/server/lib/VectorColumnDetector';
+import {Unmarshaller} from 'app/common/marshal';
 
 /**
  * Migration status for a vector column
@@ -66,6 +67,18 @@ export class VectorMigration {
   constructor(config?: MigrationConfig) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.detector = new VectorColumnDetector();
+  }
+
+  /**
+   * Unmarshal a Grist buffer to a JavaScript value
+   */
+  private unmarshalValue(buffer: Buffer): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const unmarshaller = new Unmarshaller();
+      unmarshaller.once('value', resolve);
+      unmarshaller.once('error', reject);
+      unmarshaller.push(buffer);
+    });
   }
 
   /**
@@ -253,12 +266,30 @@ export class VectorMigration {
       // Insert batch into vec0 table
       for (const row of batch) {
         try {
-          // Parse JSON vector (handle both string and array formats)
+          // Parse JSON vector (handle string, array, buffer, and Grist marshaled formats)
           let vectorArray: number[];
-          if (typeof row.vector_data === 'string') {
-            vectorArray = JSON.parse(row.vector_data);
-          } else if (Array.isArray(row.vector_data)) {
-            vectorArray = row.vector_data;
+          let rawData = row.vector_data;
+
+          // Unmarshal buffer if needed (Grist BLOB columns)
+          if (Buffer.isBuffer(rawData)) {
+            try {
+              rawData = await this.unmarshalValue(rawData);
+            } catch (err: any) {
+              log.warn(`Skipping row ${row.id}: failed to unmarshal buffer: ${err.message}`);
+              continue;
+            }
+          }
+
+          // Now process the unmarshaled data
+          if (typeof rawData === 'string') {
+            vectorArray = JSON.parse(rawData);
+          } else if (Array.isArray(rawData)) {
+            // Check for Grist marshaled format: ["L", num1, num2, ...]
+            if (rawData.length > 1 && rawData[0] === 'L') {
+              vectorArray = rawData.slice(1);  // Skip "L" type marker
+            } else {
+              vectorArray = rawData;  // Standard array
+            }
           } else {
             log.warn(`Skipping invalid vector format for row ${row.id}`);
             continue;

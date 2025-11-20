@@ -18,6 +18,7 @@
 
 import log from 'app/server/lib/log';
 import {MinDB} from 'app/server/lib/SqliteCommon';
+import {Unmarshaller} from 'app/common/marshal';
 
 /**
  * Metadata about a detected vector column
@@ -150,8 +151,29 @@ export class VectorColumnDetector {
         return null;  // No data to analyze
       }
 
+      // Unmarshal buffer values (Grist stores data as marshaled blobs)
+      const unmarshaledValues = await Promise.all(
+        samples.map(async (s) => {
+          if (Buffer.isBuffer(s.value)) {
+            try {
+              return await this.unmarshalValue(s.value);
+            } catch {
+              return null;  // Failed to unmarshal
+            }
+          }
+          return s.value;
+        })
+      );
+
+      // Filter out null values from failed unmarshaling
+      const validValues = unmarshaledValues.filter(v => v !== null);
+
+      if (validValues.length === 0) {
+        return null;  // No valid data to analyze
+      }
+
       // Analyze samples to determine if they're vectors
-      const analysis = this.analyzeSamples(samples.map(s => s.value));
+      const analysis = this.analyzeSamples(validValues);
 
       if (!analysis) {
         return null;  // Not a vector column
@@ -186,6 +208,18 @@ export class VectorColumnDetector {
   }
 
   /**
+   * Unmarshal a Grist buffer to a JavaScript value
+   */
+  private unmarshalValue(buffer: Buffer): any {
+    return new Promise((resolve, reject) => {
+      const unmarshaller = new Unmarshaller();
+      unmarshaller.once('value', resolve);
+      unmarshaller.once('error', reject);
+      unmarshaller.push(buffer);
+    });
+  }
+
+  /**
    * Analyze sample values to extract vector characteristics
    */
   private analyzeSamples(values: any[]): {
@@ -208,9 +242,24 @@ export class VectorColumnDetector {
             continue;  // Not a vector
           }
         }
-        // Already an array
-        else if (Array.isArray(value) && value.every(v => typeof v === 'number')) {
-          vector = value;
+        // Already an array - check for Grist marshaled format
+        else if (Array.isArray(value)) {
+          // Grist's marshaled list format: ["L", value1, value2, ...]
+          if (value.length > 1 && value[0] === 'L') {
+            // Skip the "L" type marker and extract numeric values
+            const numbers = value.slice(1);
+            if (numbers.every(v => typeof v === 'number')) {
+              vector = numbers;
+            } else {
+              continue;  // Not all elements are numbers
+            }
+          }
+          // Standard numeric array
+          else if (value.every(v => typeof v === 'number')) {
+            vector = value;
+          } else {
+            continue;  // Not a vector
+          }
         } else {
           continue;  // Not a vector
         }

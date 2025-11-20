@@ -248,53 +248,72 @@ class AutoEmbeddingManager:
             return None
 
     def _generate_albert_embedding(self, text: str, config: Dict) -> Optional[List[float]]:
-        """Générer embedding via API Albert"""
-        try:
-            # Debug token
-            token = config.get("token")
-            log.info(f"[DEBUG] Token présent: {token is not None}, Longueur: {len(token) if token else 0}")
-            if not token:
-                log.error("Token Albert manquant dans la configuration")
-                return None
+        """Générer embedding via API Albert avec gestion du rate limiting"""
+        max_retries = 3
+        base_delay = 1.0  # Délai de base en secondes
 
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json'
-            }
-            
-            payload = {
-                'input': text,
-                'model': config['model']
-            }
-            
-            response = requests.post(
-                config['endpoint'],
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                embedding = data.get('data', [{}])[0].get('embedding', [])
-
-                if embedding:
-                    # Accepter tout embedding valide, peu importe les dimensions
-                    log.info(f"Embedding Albert généré: {len(embedding)} dimensions (modèle: {data.get('model', 'unknown')})")
-                    return embedding
-                else:
-                    log.error(f"Embedding Albert vide ou invalide")
+        for attempt in range(max_retries):
+            try:
+                # Debug token
+                token = config.get("token")
+                if attempt == 0:
+                    log.info(f"[DEBUG] Token présent: {token is not None}, Longueur: {len(token) if token else 0}")
+                if not token:
+                    log.error("Token Albert manquant dans la configuration")
                     return None
-            else:
-                log.error(f"Erreur API Albert: {response.status_code} - {response.text}")
+
+                headers = {
+                    'Authorization': f'Bearer {token}',
+                    'Content-Type': 'application/json'
+                }
+
+                payload = {
+                    'input': text,
+                    'model': config['model']
+                }
+
+                response = requests.post(
+                    config['endpoint'],
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    embedding = data.get('data', [{}])[0].get('embedding', [])
+
+                    if embedding:
+                        # Accepter tout embedding valide, peu importe les dimensions
+                        log.info(f"Embedding Albert généré: {len(embedding)} dimensions (modèle: {data.get('model', 'unknown')})")
+                        return embedding
+                    else:
+                        log.error(f"Embedding Albert vide ou invalide")
+                        return None
+
+                elif response.status_code == 429:
+                    # Rate limiting - attendre et réessayer
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)  # Backoff exponentiel
+                        log.warning(f"Rate limit atteint (429), attente de {delay}s avant retry {attempt + 1}/{max_retries}")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        log.error(f"Rate limit persistant après {max_retries} tentatives")
+                        return None
+
+                else:
+                    log.error(f"Erreur API Albert: {response.status_code} - {response.text}")
+                    return None
+
+            except requests.exceptions.RequestException as e:
+                log.error(f"Erreur réseau Albert API: {e}")
                 return None
-                
-        except requests.exceptions.RequestException as e:
-            log.error(f"Erreur réseau Albert API: {e}")
-            return None
-        except Exception as e:
-            log.error(f"Erreur inattendue Albert: {e}")
-            return None
+            except Exception as e:
+                log.error(f"Erreur inattendue Albert: {e}")
+                return None
+
+        return None
 
     def _generate_openai_embedding(self, text: str, config: Dict) -> Optional[List[float]]:
         """Générer embedding via API OpenAI (si configuré)"""
@@ -698,95 +717,49 @@ def VECTOR_SEARCH_SYSTEM(table_id: str, query: str, limit: int = 10, threshold: 
 def _vector_search_vec0(table_id: str, embedding_column: str, query_embedding: List[float],
                         limit: int, threshold: float) -> Optional[List[Dict]]:
     """
-    Recherche vectorielle optimisée avec sqlite-vec (KNN indexé)
+    Recherche vectorielle optimisée avec sqlite-vec via Node.js backend
+
+    Cette fonction appelle le backend Node.js qui a accès direct aux tables SQLite vec0.
+    Le sandbox Python est isolé de SQLite, donc on délègue au backend via RPC.
 
     Returns:
         List[Dict]: Résultats de recherche si vec0 disponible
         None: Si vec0 table n'existe pas ou erreur
     """
     try:
-        import docmodel
+        import sandbox
 
-        doc = docmodel.global_docmodel
-        if not doc:
+        # Appeler le backend Node.js pour exécuter la recherche vec0
+        # Le backend a accès direct à SQLite et aux tables virtuelles vec0
+        results = sandbox.call_external(
+            'vec0_search',
+            table_id,
+            embedding_column,
+            query_embedding,
+            limit,
+            threshold
+        )
+
+        if not results or len(results) == 0:
+            # vec0 table n'existe pas ou aucun résultat
             return None
 
-        # Construire le nom de la table vec0
-        vec0_table_name = f"vec_{table_id}_{embedding_column}"
+        # Convertir les résultats du backend au format attendu
+        # Le backend retourne [{row_id: int, score: float}, ...]
+        formatted_results = []
+        for row in results:
+            formatted_results.append({
+                'row_id': row['row_id'],
+                'score': float(row['score']),
+                'preview': f"Record #{row['row_id']}"
+            })
 
-        # Préparer l'embedding JSON pour sqlite-vec
-        import json
-        query_vector_json = json.dumps(query_embedding)
-
-        # Requête KNN avec sqlite-vec
-        # MATCH fait une recherche KNN optimisée, distance est L2 par défaut
-        # Note: sqlite-vec retourne distance L2, on convertit en similarité cosinus après
-        sql = f"""
-            SELECT
-                v.rowid as row_id,
-                v.distance as l2_distance
-            FROM "{vec0_table_name}" v
-            WHERE v.embedding MATCH ?
-            ORDER BY v.distance
-            LIMIT ?
-        """
-
-        # Exécuter la requête via le storage du document
-        # Note: on utilise limit*2 car on va filtrer par threshold après
-        knn_results = doc._engine.fetch_query(sql, [query_vector_json, limit * 2])
-
-        if not knn_results:
-            return []
-
-        # Convertir distance L2 en similarité cosinus pour cohérence avec Python fallback
-        # On doit recalculer la similarité cosinus car vec0 retourne L2
-        results = []
-        import numpy as np
-        from scipy.spatial.distance import cosine
-
-        for row in knn_results:
-            try:
-                # Récupérer l'embedding original pour calcul cosinus
-                # (vec0 donne juste L2, mais on veut cosinus pour threshold)
-                record_sql = f'SELECT "{embedding_column}" as emb FROM "{table_id}" WHERE id = ?'
-                record_data = doc._engine.fetch_query(record_sql, [row['row_id']])
-
-                if not record_data or not record_data[0]['emb']:
-                    continue
-
-                # Parser l'embedding
-                stored_emb = record_data[0]['emb']
-                if isinstance(stored_emb, str):
-                    record_embedding = json.loads(stored_emb)
-                elif isinstance(stored_emb, list):
-                    record_embedding = stored_emb
-                else:
-                    continue
-
-                # Calculer similarité cosinus
-                similarity = 1 - cosine(query_embedding, record_embedding)
-
-                # Appliquer threshold
-                if similarity >= threshold:
-                    results.append({
-                        'row_id': row['row_id'],
-                        'score': float(similarity),
-                        'preview': f"Record #{row['row_id']}"
-                    })
-
-                # Arrêter si on a assez de résultats
-                if len(results) >= limit:
-                    break
-
-            except Exception as e:
-                log.debug(f"Erreur traitement résultat vec0 pour row {row.get('row_id')}: {e}")
-                continue
-
-        return results
+        log.info(f"✅ vec0 search successful: {len(formatted_results)} results via Node.js backend")
+        return formatted_results
 
     except Exception as e:
-        # vec0 table n'existe pas ou autre erreur - retourner None pour fallback
-        log.debug(f"vec0 search failed (will use Python fallback): {e}")
+        # Erreur RPC ou vec0 non disponible - retourner None pour fallback Python
+        log.info(f"⚠️  vec0 search via backend failed (using Python fallback): {e}")
         return None
 
 

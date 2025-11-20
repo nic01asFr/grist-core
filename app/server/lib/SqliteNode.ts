@@ -159,6 +159,7 @@ export class NodeSqlite3DatabaseAdapter implements MinDB {
     const extensions = [
       {
         name: 'vec0',
+        path: '/usr/local/lib/python3.11/site-packages/sqlite_vec/vec0',
         init: null,  // No initialization SQL needed for vec0
         description: 'sqlite-vec vector search',
         optional: true  // System continues to work without it
@@ -170,7 +171,13 @@ export class NodeSqlite3DatabaseAdapter implements MinDB {
         // Attempt to load the extension
         // loadExtension is a standard SQLite C API function exposed by node-sqlite3
         // It's safe - it only loads shared libraries, doesn't modify data
-        await fromCallback(cb => (this._db as any).loadExtension(ext.name, cb));
+        await fromCallback(cb => (this._db as any).loadExtension(ext.path, cb));
+
+        // Enable trusted_schema for vec0 to allow virtual tables in triggers
+        // This is required for sync triggers that update vec0 tables
+        if (ext.name === 'vec0') {
+          await this.exec('PRAGMA trusted_schema = ON');
+        }
 
         // Run any required initialization SQL (e.g., spatial metadata setup)
         // This is also read-only or creates new metadata tables, never modifies user data

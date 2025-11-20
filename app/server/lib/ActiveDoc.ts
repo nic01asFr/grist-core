@@ -3208,6 +3208,53 @@ export class ActiveDoc extends EventEmitter {
     ]);
   }
 
+  /**
+   * Optimized vector search using vec0 SQLite extension
+   * Called from Python sandbox via sandbox.call_external('vec0_search', ...)
+   */
+  private async _vec0Search(
+    tableId: string,
+    embeddingColumn: string,
+    queryEmbedding: number[],
+    limit: number,
+    threshold: number
+  ): Promise<Array<{row_id: number; score: number}>> {
+    try {
+      const vec0TableName = `vec_${tableId}_${embeddingColumn}`;
+
+      // Check if vec0 table exists
+      const tables = await this.docStorage.all(`
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name=?
+      `, vec0TableName);
+
+      if (tables.length === 0) {
+        return [];  // vec0 table doesn't exist, trigger Python fallback
+      }
+
+      // Perform KNN search using vec0
+      const queryJson = JSON.stringify(queryEmbedding);
+      const results = await this.docStorage.all(`
+        SELECT
+          v.rowid as row_id,
+          v.distance as l2_distance
+        FROM "${vec0TableName}" v
+        WHERE v.embedding MATCH ? AND k = ?
+        ORDER BY v.distance
+      `, queryJson, limit * 2);
+
+      // Convert L2 distance to simple score and filter by threshold
+      return results.map((row: any) => ({
+        row_id: row.row_id,
+        score: 1 / (1 + row.l2_distance)
+      })).filter((r: any) => r.score >= threshold).slice(0, limit);
+
+    } catch (error: any) {
+      log.error(`vec0_search error: ${error.message}`);
+      return [];
+    }
+  }
+
   private async _makeEngine(): Promise<ISandbox> {
     // Figure out what kind of engine we need for this document.
     const preferredPythonVersion = '3';
@@ -3220,6 +3267,9 @@ export class ActiveDoc extends EventEmitter {
           request: (key: string, args: SandboxRequest) => this._requests.handleSingleRequestWithCache(key, args),
           guessColInfo,
           convertFromColumn,
+          vec0_search: (tableId: string, embeddingColumn: string, queryEmbedding: number[],
+                        limit: number, threshold: number) =>
+            this._vec0Search(tableId, embeddingColumn, queryEmbedding, limit, threshold),
         }
       },
     });
