@@ -625,6 +625,27 @@ docker-compose logs grist | grep "✅ Recherche vec0"
 
 - **Résultat : Recherches vectorielles 5-10× plus rapides avec fallback automatique**
 
+**Phase 1.5 - Optimisations finales (commit 18) :** ✅ **COMPLÉTÉ**
+
+- **Cache embeddings pour requêtes répétées**
+  - `AutoEmbeddingManager._query_embedding_cache` : Dict query → embedding
+  - Cache LRU avec limite 100 entrées (gestion FIFO)
+  - Activation automatique dans `VECTOR_SEARCH()` via `use_cache=True`
+  - Impact : Réduction drastique des appels API Albert pour queries fréquentes
+  - Format clé cache : `{service}:{query_text}`
+
+- **Support champs formules dans auto-embeddings**
+  - Modification `should_include_in_embedding()` pour INCLURE les formules
+  - Exclusion intelligente des colonnes vectorielles uniquement (évite boucle reload)
+  - Détection par nom : exclut colonnes contenant "embedding", "vector", "vec_"
+  - Types acceptés : Text, Choice, ChoiceList (qu'ils soient formules ou non)
+  - Permet embedding de résultats calculés (concaténation, transformation texte, etc.)
+
+- **Bénéfices**
+  - Performance : Queries répétées ne régénèrent plus d'embeddings
+  - Flexibilité : Formules peuvent être utilisées pour enrichir contexte d'embedding
+  - Stabilité : Pas de reload constant grâce à exclusion colonnes vectorielles
+
 ### Statistiques de production
 
 - **143 vecteurs optimisés** sur document de test
@@ -635,6 +656,18 @@ docker-compose logs grist | grep "✅ Recherche vec0"
   - "mot de passe oublié" → 5 résultats
   - "changer email" → 5 résultats
   - etc.
+- **Cache queries** : Activation transparente pour toutes les recherches
+
+### Phase 1 - COMPLÉTÉE ✅
+
+La Phase 1 (Recherche vectorielle optimisée) est maintenant **complète et prête pour production** :
+- Infrastructure sqlite-vec fonctionnelle
+- Architecture RPC robuste Python ↔ Node.js
+- Gestion dual format (JSON + marshaled)
+- Rate limiting API Albert
+- Cache embeddings queries
+- Support formules dans auto-embeddings
+- Performance 5-10× améliorée vs fallback Python
 
 ### Roadmap future
 
@@ -680,6 +713,6 @@ curl http://localhost:8484/status
 
 ---
 
-**Dernière mise à jour** : 2025-11-19
-**Version Grist** : Fork custom avec Albert API + sqlite-vec v0.1.6
+**Dernière mise à jour** : 2025-11-20
+**Version Grist** : Fork custom avec Albert API + sqlite-vec v0.1.6 (Phase 1.5)
 **Maintenu par** : Claude Code
