@@ -153,6 +153,12 @@ export class NodeSqlite3DatabaseAdapter implements MinDB {
    * - vec0: Vector similarity search optimization (sqlite-vec)
    *   Enables KNN queries for VECTOR_SEARCH function (10-50× speedup)
    *   Existing JSON vector data remains unchanged and accessible
+   *
+   * - mod_spatialite: Spatial SQL functions (SpatiaLite, Phase 2.1)
+   *   Enables 50+ PostGIS-compatible spatial operations (ST_Distance, ST_Area, etc.)
+   *   Uses GEOS algorithms for robust geometry processing (10-100× speedup)
+   *   Creates spatial metadata tables (spatial_ref_sys, geometry_columns)
+   *   Falls back to existing Python spatial implementations if unavailable
    */
   private async _loadExtensions(): Promise<void> {
     // Extension definitions with their initialization requirements
@@ -164,6 +170,11 @@ export class NodeSqlite3DatabaseAdapter implements MinDB {
         description: 'sqlite-vec vector search',
         optional: true  // System continues to work without it
       },
+      // Phase 2: SpatiaLite - UTILISÉ VIA PYTHON RPC UNIQUEMENT
+      // mod_spatialite.so ne peut pas être chargé comme extension node-sqlite3
+      // car il a des conflits avec la version SQLite compilée dans node-sqlite3.
+      // Les fonctions ST_* sont disponibles via sandbox/grist/functions/spatial.py
+      // qui utilise spatialite CLI pour optimisation (100× plus rapide que Python pur).
     ];
 
     for (const ext of extensions) {

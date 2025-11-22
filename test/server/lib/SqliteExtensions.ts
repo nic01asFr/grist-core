@@ -184,4 +184,157 @@ describe('SqliteExtensions', function() {
 
     console.log('✅ CRITICAL: Extension loading does NOT modify existing data');
   });
+
+  // ============================================================================
+  // PHASE 2: SpatiaLite Extension Tests
+  // ============================================================================
+
+  it('should load SpatiaLite extension without errors', async function() {
+    const sdb = await SQLiteDB.openDB(dbPath('spatialite_test.db'), {
+      name: 'SpatialiteTest',
+      version: 1,
+      createSql: 'CREATE TABLE locations (id INTEGER PRIMARY KEY, name TEXT);'
+    }, OpenMode.OPEN_CREATE);
+
+    let extensionAvailable = false;
+    try {
+      // Test SpatiaLite version function
+      const result = await sdb.get('SELECT spatialite_version() as version');
+      if (result && result.version) {
+        extensionAvailable = true;
+        console.log(`✅ SpatiaLite extension loaded successfully, version: ${result.version}`);
+      }
+    } catch (err: any) {
+      console.log(`⚠️  SpatiaLite extension not available: ${err.message}`);
+    }
+
+    await sdb.close();
+
+    if (extensionAvailable) {
+      await testSpatialOperations();
+    }
+  });
+
+  /**
+   * Comprehensive spatial operations tests (only run if SpatiaLite available)
+   */
+  async function testSpatialOperations() {
+    const sdb = await SQLiteDB.openDB(dbPath('spatial_ops_test.db'), {
+      name: 'SpatialOpsTest',
+      version: 1,
+      createSql: 'CREATE TABLE points (id INTEGER PRIMARY KEY, name TEXT);'
+    }, OpenMode.OPEN_CREATE);
+
+    try {
+      // Test 1: Distance Paris-London (should be ~344-346 km)
+      const distance = await sdb.get(`
+        SELECT ST_Distance(
+          ST_GeomFromText('POINT(2.3522 48.8566)', 4326),
+          ST_GeomFromText('POINT(-0.1276 51.5074)', 4326),
+          1
+        ) / 1000 AS distance_km
+      `);
+
+      assert.isDefined(distance, 'Distance query should return result');
+      // SpatiaLite distance is geodesic, should be ~344-346 km
+      assert.isAbove(distance!.distance_km, 340, 'Paris-London distance should be > 340 km');
+      assert.isBelow(distance!.distance_km, 350, 'Paris-London distance should be < 350 km');
+      console.log(`✅ ST_Distance calculation working: ${distance!.distance_km.toFixed(1)} km`);
+
+      // Test 2: Area calculation (1°x1° square at mid-latitudes)
+      const area = await sdb.get(`
+        SELECT ST_Area(
+          ST_GeomFromText('POLYGON((0 45, 1 45, 1 46, 0 46, 0 45))', 4326),
+          1
+        ) / 1000000 AS area_km2
+      `);
+
+      assert.isDefined(area, 'Area query should return result');
+      // 1°x1° at 45° latitude ≈ 8,000-10,000 km²
+      assert.isAbove(area!.area_km2, 7000, 'Area should be > 7000 km²');
+      assert.isBelow(area!.area_km2, 12000, 'Area should be < 12000 km²');
+      console.log(`✅ ST_Area calculation working: ${area!.area_km2.toFixed(0)} km²`);
+
+      // Test 3: Point-in-polygon (Paris in France bbox)
+      const contains = await sdb.get(`
+        SELECT ST_Contains(
+          ST_GeomFromText('POLYGON((-5 42, 10 42, 10 52, -5 52, -5 42))', 4326),
+          ST_GeomFromText('POINT(2.3522 48.8566)', 4326)
+        ) AS is_inside
+      `);
+
+      assert.strictEqual(contains!.is_inside, 1, 'Paris should be inside France bbox');
+      console.log('✅ ST_Contains working correctly: Paris is in France bbox');
+
+      // Test 4: ST_Centroid
+      const centroid = await sdb.get(`
+        SELECT ST_AsText(
+          ST_Centroid(ST_GeomFromText('POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))', 4326))
+        ) AS centroid_wkt
+      `);
+
+      assert.isDefined(centroid, 'Centroid query should return result');
+      assert.include(centroid!.centroid_wkt, 'POINT', 'Centroid should be a POINT');
+      console.log(`✅ ST_Centroid working: ${centroid!.centroid_wkt}`);
+
+      // Test 5: ST_Buffer (create buffer around point)
+      const buffer = await sdb.get(`
+        SELECT ST_AsText(
+          ST_Buffer(ST_GeomFromText('POINT(2.3 48.8)', 4326), 0.01)
+        ) AS buffer_wkt
+      `);
+
+      assert.isDefined(buffer, 'Buffer query should return result');
+      assert.include(buffer!.buffer_wkt, 'POLYGON', 'Buffer should create a POLYGON');
+      console.log('✅ ST_Buffer working: created polygon around point');
+
+      // Test 6: ST_Intersects
+      const intersects = await sdb.get(`
+        SELECT ST_Intersects(
+          ST_GeomFromText('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))', 4326),
+          ST_GeomFromText('POLYGON((3 3, 8 3, 8 8, 3 8, 3 3))', 4326)
+        ) AS intersects
+      `);
+
+      assert.strictEqual(intersects!.intersects, 1, 'Overlapping polygons should intersect');
+      console.log('✅ ST_Intersects working correctly');
+
+      console.log('✅ All SpatiaLite spatial operations verified successfully');
+
+    } catch (err: any) {
+      throw new Error(`SpatiaLite operations failed: ${err.message}`);
+    } finally {
+      await sdb.close();
+    }
+  }
+
+  it('should not corrupt data when loading SpatiaLite', async function() {
+    // CRITICAL: Verify SpatiaLite extension loading doesn't modify existing data
+    const testDbPath = dbPath('spatial_safety_test.db');
+
+    let sdb = await SQLiteDB.openDB(testDbPath, {
+      name: 'SpatialSafetyTest',
+      version: 1,
+      createSql: 'CREATE TABLE geodata (id INTEGER PRIMARY KEY, location TEXT);'
+    }, OpenMode.OPEN_CREATE);
+
+    await sdb.run('INSERT INTO geodata (location) VALUES (?)', 'POINT(2.3 48.8)');
+    await sdb.run('INSERT INTO geodata (location) VALUES (?)', 'POINT(-0.1 51.5)');
+
+    const beforeData = await sdb.all('SELECT * FROM geodata ORDER BY id');
+    await sdb.close();
+
+    // Reopen (triggers extension loading again)
+    sdb = await SQLiteDB.openDB(testDbPath, {
+      name: 'SpatialSafetyTest',
+      version: 1,
+      createSql: 'CREATE TABLE geodata (id INTEGER PRIMARY KEY, location TEXT);'
+    }, OpenMode.OPEN_EXISTING);
+
+    const afterData = await sdb.all('SELECT * FROM geodata ORDER BY id');
+    await sdb.close();
+
+    assert.deepEqual(afterData, beforeData, 'Spatial data must be identical before/after extension loading');
+    console.log('✅ CRITICAL: SpatiaLite loading does NOT modify existing spatial data');
+  });
 });

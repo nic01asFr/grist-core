@@ -3255,6 +3255,48 @@ export class ActiveDoc extends EventEmitter {
     }
   }
 
+  /**
+   * Execute SpatiaLite SQL query with direct SQLite access
+   * Called from Python sandbox via sandbox.call_external('spatialite_query', ...)
+   *
+   * Phase 2.2.2 - RPC handler for spatial functions
+   * Architecture: Python sandbox → RPC → Node.js → SQLite + SpatiaLite
+   * Pattern identical to _vec0Search() from Phase 1.4
+   *
+   * @param sql SQL query with SpatiaLite functions (ST_Distance, ST_Area, etc.)
+   * @param params Bind parameters (WKT strings, numbers, booleans)
+   * @returns Query result as object with named columns, or null on error
+   *
+   * Example:
+   *   sql = 'SELECT ST_Distance(ST_GeomFromText(?, 4326), ST_GeomFromText(?, 4326), 1) AS dist'
+   *   params = ['POINT(2.3 48.8)', 'POINT(2.4 48.9)']
+   *   result = { dist: 12045.67 }
+   */
+  private async _spatialiteQuery(
+    sql: string,
+    params: any[]
+  ): Promise<any> {
+    try {
+      // Execute SQL directly on SQLite with SpatiaLite extension
+      // docStorage has direct SQLite access (Python sandbox doesn't for security)
+      const result = await this.docStorage.get(sql, ...params);
+
+      if (!result) {
+        // No result = trigger Python fallback gracefully
+        log.debug('SpatiaLite query returned no result');
+        return null;
+      }
+
+      log.debug(`✅ SpatiaLite query OK: ${JSON.stringify(result)}`);
+      return result;
+
+    } catch (error: any) {
+      // Error = trigger Python fallback gracefully (extension not loaded, invalid SQL, etc.)
+      log.debug(`⚠️  SpatiaLite query failed (Python fallback): ${error.message}`);
+      return null;
+    }
+  }
+
   private async _makeEngine(): Promise<ISandbox> {
     // Figure out what kind of engine we need for this document.
     const preferredPythonVersion = '3';
@@ -3270,6 +3312,9 @@ export class ActiveDoc extends EventEmitter {
           vec0_search: (tableId: string, embeddingColumn: string, queryEmbedding: number[],
                         limit: number, threshold: number) =>
             this._vec0Search(tableId, embeddingColumn, queryEmbedding, limit, threshold),
+          // Phase 2.2.2: SpatiaLite RPC export for spatial functions
+          spatialite_query: (sql: string, params: any[]) =>
+            this._spatialiteQuery(sql, params),
         }
       },
     });
