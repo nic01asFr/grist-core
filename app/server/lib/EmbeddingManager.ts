@@ -69,11 +69,12 @@ export class EmbeddingManager {
     this._log('EmbeddingManager worker started');
 
     // Initialiser les colonnes système pour toutes les tables au démarrage
-    setImmediate(() => {
+    // Délai pour laisser le sandbox Python s'initialiser complètement
+    setTimeout(() => {
       this._initializeAllTables().catch(err => {
         this._log(`Error initializing tables: ${err}`, 'error');
       });
-    });
+    }, 5000);
   }
 
   /**
