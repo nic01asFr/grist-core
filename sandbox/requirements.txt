@@ -60,3 +60,9 @@ unittest-xml-reporting==2.0.0
     # via -r core/sandbox/requirements.in
 wrapt==1.15.0
     # via astroid
+
+# Phase 2: Geospatial libraries for spatial data processing
+shapely==2.0.6
+    # via -r (geospatial operations, GEOS wrapper)
+pyproj==3.7.0
+    # via -r (coordinate transformations, PROJ wrapper)

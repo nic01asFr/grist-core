@@ -94,10 +94,28 @@ ARG GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false
 
 # Install curl for docker healthchecks, libexpat1 and libsqlite3-0 for python3
 # library binary dependencies, and procps for managing gvisor processes.
+# Phase 2: Add geospatial dependencies
 RUN \
   apt-get update && \
-  apt-get install -y --no-install-recommends curl libexpat1 libsqlite3-0 procps tini && \
+  apt-get install -y --no-install-recommends \
+    curl \
+    libexpat1 \
+    libsqlite3-0 \
+    procps \
+    tini \
+    libspatialite7 \
+    libsqlite3-mod-spatialite \
+    spatialite-bin \
+    libgeos-dev \
+    libproj-dev \
+    proj-bin && \
   rm -rf /var/lib/apt/lists/*
+
+# Verify geospatial libraries (Phase 2)
+RUN spatialite --version && \
+    find /usr/lib -name "mod_spatialite.so*" | head -1 && \
+    proj 2>&1 | head -1 && \
+    echo "✅ Geospatial dependencies installed: SpatiaLite + GEOS + PROJ"
 
 # Keep all storage user may want to persist in a distinct directory
 RUN mkdir -p /persist/docs
